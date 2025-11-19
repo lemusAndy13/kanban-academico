@@ -1,0 +1,27 @@
+# Python / Django
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+db.sqlite3
+.env
+.venv/
+venv/
+
+# Django static/media (si aplica)
+staticfiles/
+media/
+
+# Node / Vite
+node_modules/
+frontend/node_modules/
+dist/
+build/
+*.log
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+
