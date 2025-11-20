@@ -115,6 +115,20 @@ export default function AdminPage() {
 		return data;
 	}, [users, roleFilter, onlyStaff, search]);
 
+	// Crear curso rápido
+	const [courseOpen, setCourseOpen] = useState(false);
+	const [courseForm, setCourseForm] = useState<{name: string; color: string}>({ name: "", color: "#1976d2" });
+	const submitCourse = async () => {
+		if (!courseForm.name) return;
+		try {
+			await axios.post("/boards/", courseForm);
+			setCourseOpen(false);
+			setCourseForm({ name: "", color: "#1976d2" });
+		} catch (e: any) {
+			setError(e?.response?.data?.detail || "No se pudo crear el curso");
+		}
+	};
+
 	if (!canAccess) {
 		return (
 			<div className="container">
@@ -131,6 +145,7 @@ export default function AdminPage() {
 				<div style={{ display: "flex", gap: 8 }}>
 					<button className="btn btn-ghost" onClick={fetchUsers} disabled={loading}>Refrescar</button>
 					<button className="btn btn-primary btn-large" onClick={() => setCreateOpen(true)}>Nuevo usuario</button>
+					<button className="btn btn-primary btn-large" onClick={() => setCourseOpen(true)}>Nuevo curso</button>
 				</div>
 			</div>
 
@@ -223,6 +238,27 @@ export default function AdminPage() {
 				<div className="form-group">
 					<label className="form-label">Nueva contraseña</label>
 					<input className="input" type="text" value={pwd} onChange={(e)=>setPwd(e.target.value)} placeholder="********" />
+				</div>
+			</Modal>
+
+			<Modal
+				open={courseOpen}
+				title="Nuevo curso"
+				onClose={() => setCourseOpen(false)}
+				footer={(
+					<>
+						<button className="btn btn-ghost" onClick={() => setCourseOpen(false)}>Cancelar</button>
+						<button className="btn btn-primary" onClick={submitCourse}>Crear</button>
+					</>
+				)}
+			>
+				<div className="form-group">
+					<label className="form-label">Nombre</label>
+					<input className="input" value={courseForm.name} onChange={(e)=>setCourseForm(f=>({...f, name: e.target.value}))} placeholder="Ej. Matemática I" />
+				</div>
+				<div className="form-group">
+					<label className="form-label">Color</label>
+					<input className="input" type="color" value={courseForm.color} onChange={(e)=>setCourseForm(f=>({...f, color: e.target.value}))} />
 				</div>
 			</Modal>
 		</div>
