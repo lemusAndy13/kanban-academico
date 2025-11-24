@@ -56,9 +56,19 @@ class ChecklistItemSerializer(serializers.ModelSerializer):
         fields = ['id','card','text','done','position']
 
 class AttachmentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField(read_only=True)
     class Meta:
         model = Attachment
-        fields = ['id','card','url','name','created_at']
+        fields = ['id','card','url','file','file_url','name','created_at']
+
+    def get_file_url(self, obj):
+        try:
+            req = self.context.get("request")
+            if obj.file and hasattr(obj.file, "url"):
+                return req.build_absolute_uri(obj.file.url) if req else obj.file.url
+        except Exception:
+            pass
+        return None
 
 class ActivitySerializer(serializers.ModelSerializer):
     actor = UserSerializer(read_only=True)

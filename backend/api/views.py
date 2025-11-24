@@ -422,6 +422,19 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     serializer_class = AttachmentSerializer
     permission_classes = [permissions.IsAuthenticated, IsBoardMember]
 
+    def perform_create(self, serializer):
+        card = serializer.validated_data.get("card")
+        if not card:
+            raise serializers.ValidationError({"detail": "card requerido"})
+        # Verificar que el usuario sea miembro del curso
+        if not card.list.board.members.filter(id=self.request.user.id).exists():
+            raise serializers.ValidationError({"detail": "No autorizado para adjuntar en este curso"})
+        attachment = serializer.save()
+        # Si no se envió nombre y hay archivo, usar filename
+        if not attachment.name and attachment.file:
+            attachment.name = attachment.file.name
+            attachment.save(update_fields=["name"])
+
 
 class ActivityViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ActivitySerializer

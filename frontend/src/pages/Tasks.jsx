@@ -20,6 +20,12 @@ export default function Tasks() {
   const [members, setMembers] = useState([]);
   const [selectedAssignees, setSelectedAssignees] = useState([]);
 
+  // Attachments
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachCard, setAttachCard] = useState(null);
+  const [attachUrl, setAttachUrl] = useState("");
+  const [attachFile, setAttachFile] = useState(null);
+
   // Create Task Modal
   const [createOpen, setCreateOpen] = useState(false);
   const [boards, setBoards] = useState([]);
@@ -190,9 +196,10 @@ export default function Tasks() {
                   <span className="pill">Prioridad: {t.priority}</span>
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
-                  {role === "teacher" && (
-                    <button className="btn btn-ghost" onClick={() => openAssign(t)}>Asignar</button>
-                  )}
+                  {role === "teacher" && <button className="btn btn-ghost" onClick={() => openAssign(t)}>Asignar</button>}
+                  <button className="btn btn-ghost" onClick={() => { setAttachCard(t); setAttachUrl(""); setAttachFile(null); setAttachOpen(true); }}>
+                    Adjuntar
+                  </button>
                 </div>
               </div>
             );
@@ -233,6 +240,50 @@ export default function Tasks() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={attachOpen}
+        title="Adjuntar archivo o enlace"
+        onClose={() => setAttachOpen(false)}
+        footer={(
+          <>
+            <button className="btn btn-ghost" onClick={()=>setAttachOpen(false)}>Cancelar</button>
+            <button
+              className="btn btn-primary"
+              onClick={async ()=>{
+                if (!attachCard) return;
+                try {
+                  if (attachFile) {
+                    const fd = new FormData();
+                    fd.append("card", String(attachCard.id));
+                    fd.append("file", attachFile);
+                    await api.post("/attachments/", fd, { headers: { "Content-Type": "multipart/form-data" } });
+                  } else if (attachUrl.trim()) {
+                    await api.post("/attachments/", { card: attachCard.id, url: attachUrl.trim() });
+                  } else {
+                    return;
+                  }
+                  setAttachOpen(false);
+                } catch {
+                  setError("No se pudo adjuntar el archivo o enlace");
+                }
+              }}
+            >
+              Guardar
+            </button>
+          </>
+        )}
+      >
+        <div className="form-group">
+          <label className="form-label">Archivo</label>
+          <input className="input" type="file" onChange={(e)=>setAttachFile(e.target.files?.[0] || null)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">o Enlace</label>
+          <input className="input" type="url" value={attachUrl} onChange={(e)=>setAttachUrl(e.target.value)} placeholder="https://..." />
+        </div>
+        <div className="muted">Puedes adjuntar un archivo desde tu ordenador o pegar un link.</div>
       </Modal>
 
       <Modal

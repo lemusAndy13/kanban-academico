@@ -106,7 +106,8 @@ class ChecklistItem(models.Model):
 
 class Attachment(models.Model):
     card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name='attachments')
-    url = models.URLField()
+    url = models.URLField(null=True, blank=True)
+    file = models.FileField(upload_to='attachments/', null=True, blank=True)
     name = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
 

@@ -98,3 +98,7 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API para el Proyecto Integrador",
     "VERSION": "0.1.0",
 }
+
+# Media (para adjuntos de tareas)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
