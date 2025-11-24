@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Profile, Board, List, Card, Comment, Label, ChecklistItem, Attachment, Activity
+from django.db.models import Q
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -102,6 +103,8 @@ class AdminUserSerializer(serializers.ModelSerializer):
         raw_password = validated_data.pop('password', None)
         full_name = validated_data.pop('full_name', '')
         # Si no viene username, usar el email como username
+        if validated_data.get('email'):
+            validated_data['email'] = validated_data['email'].strip().lower()
         if not validated_data.get('username') and validated_data.get('email'):
             validated_data['username'] = validated_data['email']
         user = User(**validated_data)
@@ -119,6 +122,8 @@ class AdminUserSerializer(serializers.ModelSerializer):
         role = validated_data.pop('role', None)
         raw_password = validated_data.pop('password', None)
         full_name = validated_data.pop('full_name', None)
+        if validated_data.get('email'):
+            validated_data['email'] = validated_data['email'].strip().lower()
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if raw_password is not None and raw_password != '':
@@ -132,3 +137,14 @@ class AdminUserSerializer(serializers.ModelSerializer):
 
     def get_name(self, obj):
         return obj.first_name or obj.username
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        if email:
+            email_norm = email.strip().lower()
+            qs = User.objects.filter(email__iexact=email_norm)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({'email': 'Este correo ya está registrado.'})
+        return super().validate(attrs)

@@ -123,8 +123,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ('email', 'password', 'full_name')
 
+    def validate_email(self, value):
+        email_norm = (value or '').strip().lower()
+        if User.objects.filter(email__iexact=email_norm).exists():
+            raise serializers.ValidationError("Este correo ya está registrado.")
+        return email_norm
+
     def create(self, validated_data):
-        email = validated_data.get('email', '').strip()
+        email = validated_data.get('email', '').strip().lower()
         full_name = validated_data.get('full_name', '').strip()
         username = email  # usar correo como username de login
         user = User(username=username, email=email)
