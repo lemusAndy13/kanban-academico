@@ -20,13 +20,23 @@ class Command(BaseCommand):
         teacher.is_active = True
         teacher.set_password(teacher_password)  # siempre forzamos el password demo
         teacher.save()
-        Profile.objects.update_or_create(user=teacher, defaults={"role": "teacher"})
+        p_teacher, _ = Profile.objects.update_or_create(user=teacher, defaults={"role": "teacher"})
+        if not p_teacher.institution_id:
+            prefix = "DOC"
+            seq = Profile.objects.filter(role="teacher", institution_id__startswith=prefix).count() + 1
+            p_teacher.institution_id = f"{prefix}-{seq:06d}"
+            p_teacher.save()
 
         student, _ = User.objects.get_or_create(username=student_username, defaults={"email": ""})
         student.is_active = True
         student.set_password(student_password)  # siempre forzamos el password demo
         student.save()
-        Profile.objects.update_or_create(user=student, defaults={"role": "student"})
+        p_student, _ = Profile.objects.update_or_create(user=student, defaults={"role": "student"})
+        if not p_student.institution_id:
+            prefix = "ALU"
+            seq = Profile.objects.filter(role="student", institution_id__startswith=prefix).count() + 1
+            p_student.institution_id = f"{prefix}-{seq:06d}"
+            p_student.save()
 
         # Admin (staff + superuser) con rol teacher para permitir login por endpoint de catedrático
         admin, _ = User.objects.get_or_create(username=admin_username, defaults={"email": ""})
@@ -35,7 +45,12 @@ class Command(BaseCommand):
         admin.is_superuser = True
         admin.set_password(admin_password)
         admin.save()
-        Profile.objects.update_or_create(user=admin, defaults={"role": "teacher"})
+        p_admin, _ = Profile.objects.update_or_create(user=admin, defaults={"role": "teacher"})
+        if not p_admin.institution_id:
+            prefix = "DOC"
+            seq = Profile.objects.filter(role="teacher", institution_id__startswith=prefix).count() + 1
+            p_admin.institution_id = f"{prefix}-{seq:06d}"
+            p_admin.save()
 
         # Crear board demo
         board, _ = Board.objects.get_or_create(name="Curso Demo", owner=teacher, defaults={"color": "#e6f0ff"})

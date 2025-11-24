@@ -17,6 +17,7 @@ from django.db import models
 from .permissions import IsBoardMember, CanDeleteBoard
 from rest_framework.permissions import IsAdminUser
 from .serializers import AdminUserSerializer
+ 
 
 
 # -----------------------
@@ -38,6 +39,10 @@ class AnyRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["username"] = user.username
         data["user_id"] = user.id
         data["is_staff"] = user.is_staff
+        try:
+            data["institution_id"] = user.profile.institution_id  # type: ignore[attr-defined]
+        except Exception:
+            data["institution_id"] = None
         return data
 
 
@@ -66,6 +71,10 @@ class BaseRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["username"] = user.username
         data["user_id"] = user.id
         data["is_staff"] = user.is_staff
+        try:
+            data["institution_id"] = user.profile.institution_id  # type: ignore[attr-defined]
+        except Exception:
+            data["institution_id"] = None
         return data
 
 
@@ -100,7 +109,13 @@ class RegisterSerializer(serializers.ModelSerializer):
                     email=validated_data.get('email', ''))
         user.set_password(validated_data['password'])
         user.save()
-        Profile.objects.create(user=user)
+        # Crear perfil con ID institucional
+        profile = Profile.objects.create(user=user)
+        # Generar ID institucional basado en rol (por defecto student)
+        prefix = 'ALU' if profile.role == 'student' else 'DOC'
+        seq = Profile.objects.filter(role=profile.role, institution_id__startswith=prefix).count() + 1
+        profile.institution_id = f"{prefix}-{seq:06d}"
+        profile.save()
         return user
 
 
@@ -177,6 +192,65 @@ class BoardViewSet(viewsets.ModelViewSet):
         board = self.get_object()
         qs = board.members.all().order_by('username')
         return Response(UserSerializer(qs, many=True).data, status=200)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def assign(self, request, pk=None):
+        """
+        Asignar catedrático (owner) y N alumnos a un curso.
+        Payload esperado:
+          {
+            "teacher": "username" | user_id (opcional),
+            "students": ["username1","username2"] | [user_id,...] (opcional)
+          }
+        """
+        board = self.get_object()
+        teacher_ref = request.data.get("teacher")
+        students_ref = request.data.get("students", [])
+        updated_any = False
+
+        # Resolver helper: por username o por id
+        def get_user(ref):
+            if ref is None or ref == "":
+                return None
+            try:
+                if isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit()):
+                    return User.objects.get(id=int(ref))
+                return User.objects.get(username=str(ref))
+            except User.DoesNotExist:
+                return None
+
+        # Asignar docente como owner si se envía
+        if teacher_ref is not None and teacher_ref != "":
+            teacher_user = get_user(teacher_ref)
+            if not teacher_user:
+                return Response({"detail": "Docente no encontrado"}, status=404)
+            board.owner = teacher_user
+            board.save(update_fields=["owner"])
+            board.members.add(teacher_user)
+            updated_any = True
+
+        # Agregar alumnos
+        if isinstance(students_ref, str):
+            # separar por comas
+            students_ref = [s.strip() for s in students_ref.split(",") if s.strip()]
+        if isinstance(students_ref, list):
+            added = 0
+            for ref in students_ref:
+                u = get_user(ref)
+                if u:
+                    board.members.add(u)
+                    added += 1
+            if added > 0:
+                updated_any = True
+
+        if updated_any:
+            Activity.objects.create(
+                board=board,
+                actor=request.user,
+                action='updated',
+                meta={"assign": True}
+            )
+        return Response(BoardSerializer(board).data, status=200)
 
 class ListViewSet(viewsets.ModelViewSet):
     queryset = List.objects.all()
@@ -355,3 +429,6 @@ class AdminUserViewSet(viewsets.ModelViewSet):
         user.set_password(new_password)
         user.save()
         return Response({"detail": "Contraseña actualizada"}, status=status.HTTP_200_OK)
+
+
+ 

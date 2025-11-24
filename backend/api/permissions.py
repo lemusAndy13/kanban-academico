@@ -33,3 +33,4 @@ class CanDeleteBoard(BasePermission):
             return False
 
 
+

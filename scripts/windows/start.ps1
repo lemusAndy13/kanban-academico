@@ -17,3 +17,4 @@ Write-Host "Backend:   http://127.0.0.1:8000" -ForegroundColor Yellow
 Write-Host "Frontend:  http://127.0.0.1:5173" -ForegroundColor Yellow
 
 
+

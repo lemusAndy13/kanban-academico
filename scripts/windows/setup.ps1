@@ -25,3 +25,4 @@ Pop-Location
 Write-Host "Listo. Ejecuta scripts\windows\start.ps1 para arrancar backend y frontend." -ForegroundColor Green
 
 
+

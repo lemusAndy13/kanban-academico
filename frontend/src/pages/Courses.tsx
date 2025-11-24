@@ -14,7 +14,6 @@ export default function Courses() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const role = useMemo(() => localStorage.getItem("role"), []);
-  const [defaults, setDefaults] = useState<Array<{id:number; code:string; name:string; room:string}>>([]);
 
   // Create course
   const [createOpen, setCreateOpen] = useState(false);
@@ -28,9 +27,6 @@ export default function Courses() {
 
   useEffect(() => {
     loadBoards();
-    if (role === "teacher") {
-      loadDefaults();
-    }
   }, []);
 
   const loadBoards = async () => {
@@ -46,15 +42,6 @@ export default function Courses() {
     }
   };
 
-  const loadDefaults = async () => {
-    try {
-      const { data } = await api.get("/default-courses/");
-      setDefaults(data || []);
-    } catch {
-      // ignorar si no es catedrático
-    }
-  };
-
   const submitCreate = async () => {
     try {
       if (!createForm.name) return;
@@ -64,16 +51,6 @@ export default function Courses() {
       setCreateForm({ name: "", color: "#0d6efd" });
     } catch {
       setError("No se pudo crear el curso.");
-    }
-  };
-
-  const createFromDefault = async (course: {name:string}) => {
-    try {
-      const payload = { name: course.name, color: "#1976d2" };
-      const { data } = await api.post("/boards/", payload);
-      setBoards((prev) => [data, ...prev]);
-    } catch {
-      setError("No se pudo crear el curso desde la plantilla.");
     }
   };
 
@@ -128,24 +105,6 @@ export default function Courses() {
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {role === "teacher" && defaults.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <h3>Plantillas de cursos disponibles</h3>
-          <div className="list">
-            {defaults.map((c) => (
-              <div key={c.id} className="item" style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <div>
-                  <strong>{c.code}</strong> — {c.name} <span className="muted">({c.room})</span>
-                </div>
-                <div>
-                  <button className="btn btn-primary" onClick={() => createFromDefault(c)}>Crear</button>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

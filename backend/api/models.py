@@ -1,14 +1,31 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 class Profile(models.Model):
     ROLE_CHOICES = (('student','student'), ('teacher','teacher'))
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='student')
+    institution_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
 
     def __str__(self):
         return f"{self.user.username} ({self.role})"
+
+@receiver(post_save, sender=Profile)
+def ensure_institution_id(sender, instance, created, **kwargs):
+    """
+    Asigna un ID institucional si el perfil no lo tiene aún.
+    Formato: ALU-000001 para estudiantes, DOC-000001 para catedráticos.
+    """
+    if not instance.institution_id:
+        prefix = 'ALU' if instance.role == 'student' else 'DOC'
+        seq = Profile.objects.filter(role=instance.role, institution_id__startswith=prefix).exclude(pk=instance.pk).count() + 1
+        new_id = f"{prefix}-{seq:06d}"
+        # Evitar recursión del post_save usando update directo
+        Profile.objects.filter(pk=instance.pk).update(institution_id=new_id)
+        instance.institution_id = new_id
 
 class Board(models.Model):
     name = models.CharField(max_length=200)
