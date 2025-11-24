@@ -14,7 +14,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework import status
 from rest_framework import serializers
 from django.db import models
-from .permissions import IsBoardMember, CanDeleteBoard, IsCourseOwner
+from .permissions import IsBoardMember, CanDeleteBoard, IsCourseOwner, IsSingleAdmin
 from rest_framework.permissions import IsAdminUser
 from django.conf import settings
 from .serializers import AdminUserSerializer
@@ -30,6 +30,14 @@ class AnyRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
     No impone un rol específico.
     """
     def validate(self, attrs):
+        # Permitir login con correo: si llega un email en el campo de usuario, traducirlo a username real
+        identifier = attrs.get(self.username_field)
+        if isinstance(identifier, str) and '@' in identifier:
+            try:
+                user_by_email = User.objects.get(email__iexact=identifier.strip())
+                attrs[self.username_field] = user_by_email.username
+            except User.DoesNotExist:
+                pass
         data = super().validate(attrs)
         user = self.user
         try:
@@ -56,6 +64,13 @@ class BaseRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
     expected_role = None  # 'student' o 'teacher'
 
     def validate(self, attrs):
+        identifier = attrs.get(self.username_field)
+        if isinstance(identifier, str) and '@' in identifier:
+            try:
+                user_by_email = User.objects.get(email__iexact=identifier.strip())
+                attrs[self.username_field] = user_by_email.username
+            except User.DoesNotExist:
+                pass
         data = super().validate(attrs)
         user = self.user
         try:
@@ -100,14 +115,19 @@ class TeacherLoginView(TokenObtainPairView):
 # -----------------------
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    full_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = User
-        fields = ('username', 'email', 'password')
+        fields = ('email', 'password', 'full_name')
 
     def create(self, validated_data):
-        user = User(username=validated_data['username'],
-                    email=validated_data.get('email', ''))
+        email = validated_data.get('email', '').strip()
+        full_name = validated_data.get('full_name', '').strip()
+        username = email  # usar correo como username de login
+        user = User(username=username, email=email)
+        if full_name:
+            user.first_name = full_name
         user.set_password(validated_data['password'])
         user.save()
         # Crear perfil con ID institucional

@@ -260,7 +260,9 @@ function UsersAdmin() {
 
   const createUser = async () => {
     try {
-      const payload = { ...form };
+      const payload: any = { ...form };
+      // Usar el email como username en el backend
+      payload.username = form.email;
       if (!payload.password) delete (payload as any).password;
       const { data } = await api.post("/admin/users/", payload);
       setUsers(prev => [data, ...prev]);
@@ -311,8 +313,8 @@ function UsersAdmin() {
       >
         <div className="grid" style={{ gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:12 }}>
           <div>
-            <label className="form-label">Usuario</label>
-            <input className="input" value={form.username} onChange={(e)=>setForm(f=>({...f, username:e.target.value}))} />
+            <label className="form-label">Nombre completo</label>
+            <input className="input" value={(form as any).full_name || ""} onChange={(e)=>setForm((f:any)=>({...f, full_name:e.target.value}))} />
           </div>
           <div>
             <label className="form-label">Email</label>

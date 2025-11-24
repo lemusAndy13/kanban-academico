@@ -6,6 +6,7 @@ export default function App() {
   const role = localStorage.getItem("role");
   const isAdmin = localStorage.getItem("is_admin") === "true";
   const username = localStorage.getItem("username");
+  const roleLabel = isAdmin ? "Administrador" : (role === "teacher" ? "Catedrático" : "Estudiante");
   const themeStored = (typeof window !== "undefined" && localStorage.getItem("theme")) || "light";
   if (typeof document !== "undefined") {
     document.body.classList.toggle("dark", themeStored === "dark");
@@ -36,7 +37,7 @@ export default function App() {
           </div>
           <div className="nav">
             <span className="user-badge">
-              {username ? username : "Usuario"} ({role === "teacher" ? "Catedrático" : "Estudiante"})
+              {username ? username : "Usuario"} ({roleLabel})
             </span>
             <button className="theme-toggle" onClick={toggleTheme} title="Cambiar tema">🌓</button>
             <button className="btn btn-ghost" onClick={handleLogout}>Cerrar sesión</button>

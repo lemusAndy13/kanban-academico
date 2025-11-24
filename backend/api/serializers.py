@@ -83,10 +83,11 @@ class AdminUserSerializer(serializers.ModelSerializer):
     role = serializers.ChoiceField(choices=[('student', 'student'), ('teacher', 'teacher')], write_only=True, required=False)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     profile_role = serializers.SerializerMethodField(read_only=True)
+    full_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'is_active', 'is_staff', 'password', 'role', 'profile_role']
+        fields = ['id', 'username', 'email', 'is_active', 'password', 'role', 'profile_role', 'full_name']
         read_only_fields = ['id', 'profile_role']
 
     def get_profile_role(self, obj):
@@ -98,7 +99,13 @@ class AdminUserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         role = validated_data.pop('role', 'student')
         raw_password = validated_data.pop('password', None)
+        full_name = validated_data.pop('full_name', '')
+        # Si no viene username, usar el email como username
+        if not validated_data.get('username') and validated_data.get('email'):
+            validated_data['username'] = validated_data['email']
         user = User(**validated_data)
+        if full_name:
+            user.first_name = full_name  # guardar nombre completo en first_name
         if raw_password:
             user.set_password(raw_password)
         else:
@@ -110,10 +117,13 @@ class AdminUserSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         role = validated_data.pop('role', None)
         raw_password = validated_data.pop('password', None)
+        full_name = validated_data.pop('full_name', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if raw_password is not None and raw_password != '':
             instance.set_password(raw_password)
+        if full_name is not None:
+            instance.first_name = full_name
         instance.save()
         if role:
             Profile.objects.update_or_create(user=instance, defaults={'role': role})
