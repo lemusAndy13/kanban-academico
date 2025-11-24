@@ -84,11 +84,12 @@ class AdminUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     profile_role = serializers.SerializerMethodField(read_only=True)
     full_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    name = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'is_active', 'password', 'role', 'profile_role', 'full_name']
-        read_only_fields = ['id', 'profile_role']
+        fields = ['id', 'username', 'email', 'is_active', 'password', 'role', 'profile_role', 'full_name', 'name']
+        read_only_fields = ['id', 'profile_role', 'name']
 
     def get_profile_role(self, obj):
         try:
@@ -128,3 +129,6 @@ class AdminUserSerializer(serializers.ModelSerializer):
         if role:
             Profile.objects.update_or_create(user=instance, defaults={'role': role})
         return instance
+
+    def get_name(self, obj):
+        return obj.first_name or obj.username

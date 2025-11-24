@@ -34,6 +34,9 @@ export default function Login() {
     if (typeof res.data.is_admin !== "undefined") {
       localStorage.setItem("is_admin", String(Boolean(res.data.is_admin)));
     }
+    if (typeof res.data.full_name !== "undefined") {
+      localStorage.setItem("full_name", String(res.data.full_name || ""));
+    }
   };
 
   const handleLogin = async (e) => {

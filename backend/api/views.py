@@ -48,6 +48,7 @@ class AnyRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["username"] = user.username
         data["user_id"] = user.id
         data["is_admin"] = (user.username == settings.ADMIN_USERNAME)
+        data["full_name"] = user.first_name or ""
         try:
             data["institution_id"] = user.profile.institution_id  # type: ignore[attr-defined]
         except Exception:
@@ -87,6 +88,7 @@ class BaseRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["username"] = user.username
         data["user_id"] = user.id
         data["is_admin"] = (user.username == settings.ADMIN_USERNAME)
+        data["full_name"] = user.first_name or ""
         try:
             data["institution_id"] = user.profile.institution_id  # type: ignore[attr-defined]
         except Exception:

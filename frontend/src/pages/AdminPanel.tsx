@@ -3,7 +3,7 @@ import api from "../services/axiosConfig";
 import Modal from "../components/Modal";
 
 type Role = "student" | "teacher";
-type AdminUser = { id:number; username:string; email:string; is_active:boolean; profile_role?: Role|null };
+type AdminUser = { id:number; username:string; email:string; is_active:boolean; profile_role?: Role|null; name?: string };
 type Board = { id:number; code?:string; name:string; color:string; owner?: {id:number; username:string}; members?: Array<{id:number; username:string}> };
 
 export default function AdminPanel() {
@@ -246,6 +246,8 @@ function UsersAdmin() {
   const [form, setForm] = useState<{username:string; email:string; password:string; role:Role}>({
     username:"", email:"", password:"", role:"student"
   });
+  const [passOpen, setPassOpen] = useState<null|AdminUser>(null);
+  const [newPass, setNewPass] = useState("");
 
   const loadUsers = async () => {
     try {
@@ -289,12 +291,13 @@ function UsersAdmin() {
           {users.map((u)=>(
             <div key={u.id} className="card-item">
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <h3 style={{ margin:0 }}>{u.username}</h3>
+                <h3 style={{ margin:0 }}>{u.name || u.username}</h3>
                 <div className="pill">{u.profile_role || "-"}</div>
               </div>
               <div className="muted">{u.email || "-"}</div>
               <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:10 }}>
                 <button className="btn btn-ghost" onClick={()=>toggleActive(u)}>{u.is_active ? "Desactivar" : "Activar"}</button>
+                <button className="btn btn-ghost" onClick={()=>{ setPassOpen(u); setNewPass(""); }}>Contraseña</button>
               </div>
             </div>
           ))}
@@ -331,6 +334,35 @@ function UsersAdmin() {
               <option value="teacher">Catedrático</option>
             </select>
           </div>
+        </div>
+      </Modal>
+      <Modal
+        open={!!passOpen}
+        title={`Restablecer contraseña${passOpen ? ` - ${passOpen.name || passOpen.username}` : ""}`}
+        onClose={()=>setPassOpen(null)}
+        footer={(
+          <>
+            <button className="btn btn-ghost" onClick={()=>setPassOpen(null)}>Cancelar</button>
+            <button
+              className="btn btn-primary"
+              onClick={async ()=>{
+                if (!passOpen || !newPass) return;
+                try {
+                  await api.post(`/admin/users/${passOpen.id}/set_password/`, { password: newPass });
+                  setPassOpen(null);
+                } catch (e:any) {
+                  setError(e?.response?.data?.detail || "No se pudo actualizar la contraseña");
+                }
+              }}
+              disabled={!newPass}
+            >Guardar</button>
+          </>
+        )}
+      >
+        <div className="form-group">
+          <label className="form-label">Nueva contraseña</label>
+          <input className="input" type="text" value={newPass} onChange={(e)=>setNewPass(e.target.value)} />
+          <div className="muted">El usuario iniciará con email + esta contraseña.</div>
         </div>
       </Modal>
     </>
