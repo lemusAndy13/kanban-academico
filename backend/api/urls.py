@@ -1,4 +1,4 @@
-from django.urls import include, path
+from django.urls import path, include
 from rest_framework import routers
 from api.views import (
     BoardViewSet, ListViewSet, CardViewSet,
@@ -17,6 +17,7 @@ router.register(r'attachments', AttachmentViewSet, basename='attachments')
 router.register(r'activities', ActivityViewSet, basename='activities')
 router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 
+# Estas rutas se incluirán desde core.urls con prefijo '/api/'
 urlpatterns = [
     path('', include(router.urls)),
 ]

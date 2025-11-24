@@ -33,4 +33,21 @@ class CanDeleteBoard(BasePermission):
             return False
 
 
+class IsCourseOwner(BasePermission):
+    """
+    Permite la acción solo si el usuario es el catedrático asignado (owner) del curso.
+    Aplica a objetos que referencien a Board directamente o vía list.board.
+    """
+    def has_object_permission(self, request, view, obj):
+        board = None
+        if isinstance(obj, Board):
+            board = obj
+        elif hasattr(obj, 'board'):
+            board = obj.board
+        elif hasattr(obj, 'list') and hasattr(obj.list, 'board'):
+            board = obj.list.board
+        if not board:
+            return False
+        return request.user == board.owner
+
 

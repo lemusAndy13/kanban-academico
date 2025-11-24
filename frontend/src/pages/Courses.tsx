@@ -4,6 +4,7 @@ import Modal from "../components/Modal";
 
 type Board = {
   id: number;
+  code?: string;
   name: string;
   color: string;
   members?: Array<{ id: number; username: string }>;
@@ -18,6 +19,8 @@ export default function Courses() {
   // Create course
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ name: "", color: "#0d6efd" });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
 
   // Invite
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -44,13 +47,17 @@ export default function Courses() {
 
   const submitCreate = async () => {
     try {
-      if (!createForm.name) return;
+      if (!createForm.name) { setCreateError("Ingresa el nombre del curso."); return; }
+      setCreating(true);
       const { data } = await api.post("/boards/", createForm);
       setBoards((prev) => [data, ...prev]);
       setCreateOpen(false);
       setCreateForm({ name: "", color: "#0d6efd" });
-    } catch {
-      setError("No se pudo crear el curso.");
+      setCreateError("");
+    } catch (e:any) {
+      setError(e?.response?.data?.name?.[0] || "No se pudo crear el curso.");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -93,8 +100,9 @@ export default function Courses() {
             <div key={b.id} className="card-item">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <h3 style={{ margin: 0 }}>{b.name}</h3>
-                <div className="pill" style={{ background: "#fff" }}>Miembros: {b.members?.length ?? "—"}</div>
+                <div className="pill" style={{ background: "#fff" }}>{b.code || `ID #${b.id}`}</div>
               </div>
+              <div className="muted" style={{ marginTop: 8 }}>Miembros: {b.members?.length ?? "—"}</div>
               <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <a className="btn btn-ghost" href={`/board/${b.id}`}>Abrir tablero</a>
                 {role === "teacher" && (
@@ -115,7 +123,9 @@ export default function Courses() {
         footer={(
           <>
             <button className="btn btn-ghost" onClick={() => setCreateOpen(false)}>Cancelar</button>
-            <button className="btn btn-primary" onClick={submitCreate}>Crear</button>
+            <button className="btn btn-primary" onClick={submitCreate} disabled={!createForm.name || creating}>
+              {creating ? "Creando..." : "Crear"}
+            </button>
           </>
         )}
       >
@@ -125,9 +135,13 @@ export default function Courses() {
             className="input"
             type="text"
             value={createForm.name}
-            onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) => { setCreateError(""); setCreateForm((f) => ({ ...f, name: e.target.value })); }}
             placeholder="Ej. Curso de Matemática I"
+            autoFocus
+            onKeyDown={(e)=>{ if (e.key === "Enter" && createForm.name) submitCreate(); }}
           />
+          <div className="muted">El ID del curso se generará automáticamente.</div>
+          {createError && <div className="alert">{createError}</div>}
         </div>
         <div className="form-group">
           <label className="form-label">Color</label>
@@ -137,6 +151,17 @@ export default function Courses() {
             value={createForm.color}
             onChange={(e) => setCreateForm((f) => ({ ...f, color: e.target.value }))}
           />
+          <div className="row" style={{ marginTop: 8, gap: 6 }}>
+            {["#1976d2","#0ea5e9","#22c55e","#f59e0b","#ef4444","#8b5cf6"].map(c=>(
+              <button
+                key={c}
+                className="btn btn-ghost"
+                style={{ width: 28, height: 28, padding: 0, background: c, borderColor: c }}
+                onClick={()=>setCreateForm(f=>({ ...f, color: c }))}
+                title={c}
+              />
+            ))}
+          </div>
         </div>
       </Modal>
 

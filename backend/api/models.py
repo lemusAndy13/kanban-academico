@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 class Profile(models.Model):
@@ -28,6 +28,7 @@ def ensure_institution_id(sender, instance, created, **kwargs):
         instance.institution_id = new_id
 
 class Board(models.Model):
+    code = models.CharField(max_length=20, unique=True, null=True, blank=True)
     name = models.CharField(max_length=200)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='owned_boards')
     members = models.ManyToManyField(User, related_name='boards', blank=True)
@@ -36,6 +37,21 @@ class Board(models.Model):
 
     def __str__(self):
         return self.name
+
+
+@receiver(pre_save, sender=Board)
+def ensure_board_code(sender, instance: "Board", **kwargs):
+    if instance.code:
+        return
+    base = (instance.name or "").upper()
+    letters = "".join(ch for ch in base if ch.isalpha())[:3]
+    prefix = letters if letters else "CUR"
+    seq = Board.objects.filter(code__startswith=f"{prefix}-").exclude(pk=instance.pk).count() + 1
+    code = f"{prefix}-{seq:06d}"
+    while Board.objects.filter(code=code).exclude(pk=instance.pk).exists():
+        seq += 1
+        code = f"{prefix}-{seq:06d}"
+    instance.code = code
 
 class List(models.Model):
     board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name='lists')

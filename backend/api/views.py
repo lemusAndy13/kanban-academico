@@ -14,7 +14,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework import status
 from rest_framework import serializers
 from django.db import models
-from .permissions import IsBoardMember, CanDeleteBoard
+from .permissions import IsBoardMember, CanDeleteBoard, IsCourseOwner
 from rest_framework.permissions import IsAdminUser
 from .serializers import AdminUserSerializer
  
@@ -159,7 +159,7 @@ def default_courses(request):
 # -----------------------
 class BoardViewSet(viewsets.ModelViewSet):
     serializer_class = BoardSerializer
-    permission_classes = [permissions.IsAuthenticated, IsBoardMember|CanDeleteBoard]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return Board.objects.filter(members=self.request.user)
@@ -167,6 +167,64 @@ class BoardViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         board = serializer.save(owner=self.request.user)
         board.members.add(self.request.user)
+
+    # La seguridad de detalle (retrieve/update/destroy) se garantiza
+    # limitando el queryset a boards donde el usuario es miembro.
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def set_teacher(self, request, pk=None):
+        """
+        Asigna el catedrático del curso usando el campo owner.
+        Payload: { "username": "<teacher_username>" }
+        """
+        board = self.get_object()
+        username = request.data.get("username")
+        if not username:
+            return Response({"detail": "username requerido"}, status=400)
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({"detail": "Usuario no existe"}, status=404)
+        try:
+            role = user.profile.role  # type: ignore[attr-defined]
+        except Profile.DoesNotExist:
+            role = "student"
+        if role != "teacher":
+            return Response({"detail": "El usuario indicado no es catedrático."}, status=400)
+        board.owner = user
+        board.save()
+        board.members.add(user)
+        return Response(BoardSerializer(board).data, status=200)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def set_students(self, request, pk=None):
+        """
+        Matricula estudiantes en el curso.
+        Payload: { "usernames": ["student1","student2"], "replace": false }
+        Si replace=true, reemplaza el grupo de estudiantes actuales por los indicados.
+        """
+        board = self.get_object()
+        usernames = request.data.get("usernames")
+        replace = bool(request.data.get("replace", False))
+        if not usernames or not isinstance(usernames, list):
+            return Response({"detail": "usernames debe ser lista de strings"}, status=400)
+        users = list(User.objects.filter(username__in=usernames))
+        # Filtrar solo estudiantes por perfil
+        student_users = []
+        for u in users:
+            try:
+                if u.profile.role == "student":  # type: ignore[attr-defined]
+                    student_users.append(u)
+            except Profile.DoesNotExist:
+                continue
+        if replace:
+            # Quitar estudiantes actuales
+            current_students = User.objects.filter(boards=board, profile__role="student")
+            if current_students:
+                board.members.remove(*current_students)
+        if student_users:
+            board.members.add(*student_users)
+        return Response({"detail": "Estudiantes actualizados", "count": len(student_users)}, status=200)
 
     @action(detail=True, methods=['post'])
     def invite(self, request, pk=None):
@@ -193,65 +251,6 @@ class BoardViewSet(viewsets.ModelViewSet):
         qs = board.members.all().order_by('username')
         return Response(UserSerializer(qs, many=True).data, status=200)
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
-    def assign(self, request, pk=None):
-        """
-        Asignar catedrático (owner) y N alumnos a un curso.
-        Payload esperado:
-          {
-            "teacher": "username" | user_id (opcional),
-            "students": ["username1","username2"] | [user_id,...] (opcional)
-          }
-        """
-        board = self.get_object()
-        teacher_ref = request.data.get("teacher")
-        students_ref = request.data.get("students", [])
-        updated_any = False
-
-        # Resolver helper: por username o por id
-        def get_user(ref):
-            if ref is None or ref == "":
-                return None
-            try:
-                if isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit()):
-                    return User.objects.get(id=int(ref))
-                return User.objects.get(username=str(ref))
-            except User.DoesNotExist:
-                return None
-
-        # Asignar docente como owner si se envía
-        if teacher_ref is not None and teacher_ref != "":
-            teacher_user = get_user(teacher_ref)
-            if not teacher_user:
-                return Response({"detail": "Docente no encontrado"}, status=404)
-            board.owner = teacher_user
-            board.save(update_fields=["owner"])
-            board.members.add(teacher_user)
-            updated_any = True
-
-        # Agregar alumnos
-        if isinstance(students_ref, str):
-            # separar por comas
-            students_ref = [s.strip() for s in students_ref.split(",") if s.strip()]
-        if isinstance(students_ref, list):
-            added = 0
-            for ref in students_ref:
-                u = get_user(ref)
-                if u:
-                    board.members.add(u)
-                    added += 1
-            if added > 0:
-                updated_any = True
-
-        if updated_any:
-            Activity.objects.create(
-                board=board,
-                actor=request.user,
-                action='updated',
-                meta={"assign": True}
-            )
-        return Response(BoardSerializer(board).data, status=200)
-
 class ListViewSet(viewsets.ModelViewSet):
     queryset = List.objects.all()
     serializer_class = ListSerializer
@@ -261,6 +260,17 @@ class ListViewSet(viewsets.ModelViewSet):
 class CardViewSet(viewsets.ModelViewSet):
     serializer_class = CardSerializer
     permission_classes = [permissions.IsAuthenticated, IsBoardMember]
+
+    def create(self, request, *args, **kwargs):
+        """
+        Solo el catedrático asignado (owner) del curso puede crear tareas.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        list_obj = serializer.validated_data.get("list")
+        if not list_obj or request.user != list_obj.board.owner:
+            return Response({"detail": "Solo el catedrático del curso puede crear tareas."}, status=403)
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         card = serializer.save(created_by=self.request.user)
@@ -272,6 +282,21 @@ class CardViewSet(viewsets.ModelViewSet):
             action='created',
             meta={"card": card.id, "title": card.title}
         )
+
+    def update(self, request, *args, **kwargs):
+        """
+        Solo el catedrático asignado (owner) puede modificar tareas.
+        """
+        instance = self.get_object()
+        if request.user != instance.list.board.owner:
+            return Response({"detail": "Solo el catedrático del curso puede modificar tareas."}, status=403)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if request.user != instance.list.board.owner:
+            return Response({"detail": "Solo el catedrático del curso puede modificar tareas."}, status=403)
+        return super().partial_update(request, *args, **kwargs)
 
     def get_queryset(self):
         user = self.request.user

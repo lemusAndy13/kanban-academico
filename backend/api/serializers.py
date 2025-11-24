@@ -18,7 +18,8 @@ class BoardSerializer(serializers.ModelSerializer):
     members = UserSerializer(read_only=True, many=True)
     class Meta:
         model = Board
-        fields = ['id','name','owner','members','color','created_at']
+        fields = ['id','code','name','owner','members','color','created_at']
+        read_only_fields = ['code']
 
 class ListSerializer(serializers.ModelSerializer):
     class Meta:
@@ -75,12 +76,6 @@ class AdminUserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'username', 'email', 'is_active', 'is_staff', 'password', 'role', 'profile_role']
         read_only_fields = ['id', 'profile_role']
-        extra_kwargs = {
-            'email': {'required': False, 'allow_blank': True},
-            'is_active': {'required': False},
-            'is_staff': {'required': False},
-            'username': {'required': True},
-        }
 
     def get_profile_role(self, obj):
         try:

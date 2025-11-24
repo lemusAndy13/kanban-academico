@@ -22,6 +22,8 @@ export default function Tasks() {
 
   // Create Task Modal
   const [createOpen, setCreateOpen] = useState(false);
+  const [boards, setBoards] = useState([]);
+  const [selectedBoard, setSelectedBoard] = useState("");
   const [lists, setLists] = useState([]);
   const [form, setForm] = useState({
     list: "",
@@ -101,12 +103,30 @@ export default function Tasks() {
   const openCreate = async () => {
     try {
       setCreateOpen(true);
+      // Cargar cursos donde el usuario es owner (catedrático)
+      const boardsRes = await api.get("/boards/");
+      const allBoards = boardsRes.data || [];
+      const ownerBoards = allBoards.filter((b) => b?.owner?.id === myId);
+      setBoards(ownerBoards);
+
+      // Cargar listas
       const res = await api.get("/lists/");
-      setLists(res.data || []);
-      if (res.data?.length && !form.list) {
-        setForm((f) => ({ ...f, list: res.data[0].id }));
+      const allLists = res.data || [];
+      if (ownerBoards.length > 0) {
+        const firstId = ownerBoards[0].id;
+        setSelectedBoard(firstId);
+        const filtered = allLists.filter((l) => l.board === firstId);
+        setLists(filtered);
+        if (filtered.length && !form.list) {
+          setForm((f) => ({ ...f, list: filtered[0].id }));
+        }
+      } else {
+        setSelectedBoard("");
+        setLists([]);
+        setForm((f)=>({ ...f, list: "" }));
       }
     } catch {
+      setBoards([]);
       setLists([]);
     }
   };
@@ -226,6 +246,29 @@ export default function Tasks() {
           </>
         )}
       >
+        <div className="form-group">
+          <label className="form-label">Curso</label>
+          <select
+            className="input"
+            value={selectedBoard}
+            onChange={(e)=>{
+              const boardId = Number(e.target.value);
+              setSelectedBoard(boardId);
+              // Refiltrar listas para el curso seleccionado
+              api.get("/lists/").then((r)=>{
+                const lst = r.data || [];
+                const filtered = lst.filter((l)=> l.board === boardId);
+                setLists(filtered);
+                setForm((f)=>({ ...f, list: filtered[0]?.id || "" }));
+              }).catch(()=>{ setLists([]); setForm((f)=>({ ...f, list: "" })); });
+            }}
+          >
+            {boards.length === 0 && <option value="">— No tienes cursos como catedrático —</option>}
+            {boards.map((b)=>(
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </div>
         <div className="form-group">
           <label className="form-label">Lista</label>
           <select

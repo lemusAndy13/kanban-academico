@@ -4,7 +4,7 @@ import Modal from "../components/Modal";
 
 type Role = "student" | "teacher";
 type AdminUser = { id:number; username:string; email:string; is_active:boolean; is_staff:boolean; profile_role?: Role|null };
-type Board = { id:number; name:string; color:string; members?: Array<{id:number; username:string}> };
+type Board = { id:number; code?:string; name:string; color:string; owner?: {id:number; username:string}; members?: Array<{id:number; username:string}> };
 
 export default function AdminPanel() {
   const isStaff = localStorage.getItem("is_staff") === "true";
@@ -33,16 +33,15 @@ function CoursesAdmin() {
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name:"", color:"#1976d2" });
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignBoard, setAssignBoard] = useState<Board|null>(null);
-  const [users, setUsers] = useState<any[]>([]);
-  const teachers = useMemo(()=>users.filter(u=>u.profile_role==='teacher'), [users]);
-  const students = useMemo(()=>users.filter(u=>u.profile_role==='student'), [users]);
-  const [teacherRef, setTeacherRef] = useState<string>("");
-  const [studentsCsv, setStudentsCsv] = useState<string>("");
+  const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [manageOpen, setManageOpen] = useState<null|Board>(null);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [teacherId, setTeacherId] = useState<number|"">("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+  const [replaceStudents, setReplaceStudents] = useState(false);
 
-  useEffect(()=>{ loadBoards(); }, []);
-  useEffect(()=>{ loadUsers(); }, []);
+  useEffect(()=>{ loadBoards(); loadUsers(); }, []);
 
   const loadBoards = async () => {
     try {
@@ -56,38 +55,46 @@ function CoursesAdmin() {
   const loadUsers = async () => {
     try {
       const { data } = await api.get("/admin/users/");
-      setUsers(data || []);
-    } catch { /* ignore */ }
+      setAdminUsers(data || []);
+    } catch {
+      // silencioso para no ensuciar la UI de cursos
+    }
   };
 
+  // Cuando se abre el modal de asignación, precargar selección actual
+  useEffect(()=>{
+    if (!manageOpen) return;
+    const currentTeacherId = manageOpen.owner?.id ?? "";
+    setTeacherId(currentTeacherId);
+    // Mapear miembros actuales a estudiantes por id usando catálogo adminUsers
+    const studentIds = (manageOpen.members || [])
+      .map(m => {
+        const found = adminUsers.find(u => u.username === m.username);
+        return found && found.profile_role === "student" ? found.id : null;
+      })
+      .filter((v): v is number => typeof v === "number");
+    setSelectedStudentIds(studentIds);
+    setReplaceStudents(false);
+  }, [manageOpen, adminUsers]);
+
+  const teacherOptions = useMemo(()=>adminUsers.filter(u => u.profile_role === "teacher"), [adminUsers]);
+  const studentOptions = useMemo(()=>adminUsers.filter(u => u.profile_role === "student"), [adminUsers]);
+
   const submitCreate = async () => {
-    if (!form.name) return;
+    if (!form.name) {
+      setError("Completa el nombre del curso.");
+      return;
+    }
     try {
+      setCreating(true); setFormError("");
       const { data } = await api.post("/boards/", form);
       setBoards(prev => [data, ...prev]);
       setCreateOpen(false);
       setForm({ name:"", color:"#1976d2" });
-    } catch { setError("No se pudo crear el curso."); }
-  };
-
-  const openAssign = (b: Board) => {
-    setAssignBoard(b);
-    setTeacherRef("");
-    setStudentsCsv("");
-    setAssignOpen(true);
-  };
-
-  const submitAssign = async () => {
-    if (!assignBoard) return;
-    try {
-      await api.post(`/boards/${assignBoard.id}/assign/`, {
-        teacher: teacherRef || undefined,
-        students: studentsCsv,
-      });
-      setAssignOpen(false);
-      await loadBoards();
-    } catch {
-      setError("No se pudo asignar docente/alumnos.");
+    } catch (e:any) {
+      setError(e?.response?.data?.name?.[0] || "No se pudo crear el curso.");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -105,12 +112,15 @@ function CoursesAdmin() {
             <div key={b.id} className="card-item">
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                 <h3 style={{ margin:0 }}>{b.name}</h3>
-                <div className="pill" style={{ background:"#fff" }}>Miembros: {b.members?.length ?? "—"}</div>
+                <div className="pill" style={{ background:"#fff" }}>{b.code || `ID #${b.id}`}</div>
               </div>
               <div style={{ marginTop:10, display:"flex", gap:8, justifyContent:"flex-end" }}>
                 <a className="btn btn-ghost" href={`/board/${b.id}`}>Abrir</a>
-                <button className="btn btn-ghost" onClick={()=>openAssign(b)}>Asignar</button>
+                <button className="btn btn-ghost" onClick={()=>{
+                  setManageOpen(b);
+                }}>Asignar</button>
               </div>
+              <div className="muted" style={{ marginTop:8 }}>Miembros: {b.members?.length ?? "—"}</div>
             </div>
           ))}
         </div>
@@ -122,43 +132,106 @@ function CoursesAdmin() {
         footer={(
           <>
             <button className="btn btn-ghost" onClick={()=>setCreateOpen(false)}>Cancelar</button>
-            <button className="btn btn-primary" onClick={submitCreate}>Crear</button>
+            <button className="btn btn-primary" onClick={submitCreate} disabled={!form.name || creating}>
+              {creating ? "Creando..." : "Crear"}
+            </button>
           </>
         )}
       >
         <div className="form-group">
           <label className="form-label">Nombre</label>
-          <input className="input" value={form.name} onChange={(e)=>setForm(f=>({...f, name:e.target.value}))} placeholder="Ej. Matemática I" />
+          <input
+            className="input"
+            value={form.name}
+            onChange={(e)=>{
+              setFormError("");
+              setForm(f=>({...f, name:e.target.value}));
+            }}
+            placeholder="Ej. Matemática I"
+            autoFocus
+            onKeyDown={(e)=>{ if (e.key === "Enter" && form.name) submitCreate(); }}
+          />
+          <div className="muted">El ID del curso se generará automáticamente.</div>
+          {formError && <div className="alert">{formError}</div>}
         </div>
         <div className="form-group">
           <label className="form-label">Color</label>
           <input className="input" type="color" value={form.color} onChange={(e)=>setForm(f=>({...f, color:e.target.value}))} />
+          <div className="row" style={{ marginTop: 8, gap: 6 }}>
+            {["#1976d2","#0ea5e9","#22c55e","#f59e0b","#ef4444","#8b5cf6"].map(c=>(
+              <button
+                key={c}
+                className="btn btn-ghost"
+                style={{ width: 28, height: 28, padding: 0, background: c, borderColor: c }}
+                onClick={()=>setForm(f=>({...f, color: c}))}
+                title={c}
+              />
+            ))}
+          </div>
         </div>
       </Modal>
-
       <Modal
-        open={assignOpen}
-        title={`Asignar a ${assignBoard?.name ?? ''}`}
-        onClose={()=>setAssignOpen(false)}
+        open={!!manageOpen}
+        title={`Asignar participantes${manageOpen ? ` - ${manageOpen.name}` : ""}`}
+        onClose={()=>setManageOpen(null)}
         footer={(
           <>
-            <button className="btn btn-ghost" onClick={()=>setAssignOpen(false)}>Cancelar</button>
-            <button className="btn btn-primary" onClick={submitAssign}>Guardar</button>
+            <button className="btn btn-ghost" onClick={()=>setManageOpen(null)}>Cerrar</button>
+            <button
+              className="btn btn-primary"
+              onClick={async ()=>{
+                if (!manageOpen) return;
+                try {
+                  setError("");
+                  // teacher
+                  if (teacherId) {
+                    const t = adminUsers.find(u => u.id === teacherId);
+                    if (t) {
+                      await api.post(`/boards/${manageOpen.id}/set_teacher/`, { username: t.username });
+                    }
+                  }
+                  // students
+                  const usernames = selectedStudentIds.map(id => adminUsers.find(u => u.id === id)?.username).filter(Boolean) as string[];
+                  await api.post(`/boards/${manageOpen.id}/set_students/`, { usernames, replace: replaceStudents });
+                  await loadBoards();
+                  setManageOpen(null);
+                } catch (e:any) {
+                  setError(e?.response?.data?.detail || "No se pudieron asignar participantes");
+                }
+              }}
+            >Guardar</button>
           </>
         )}
       >
         <div className="form-group">
           <label className="form-label">Catedrático</label>
-          <select className="input" value={teacherRef} onChange={(e)=>setTeacherRef(e.target.value)}>
-            <option value="">(sin cambio)</option>
-            {teachers.map(t=>(
-              <option key={t.id} value={t.username}>{t.username} ({t.email || '-'})</option>
+          <select className="input" value={teacherId} onChange={(e)=>setTeacherId(e.target.value ? Number(e.target.value) : "")}>
+            <option value="">— Seleccionar —</option>
+            {teacherOptions.map(t=>(
+              <option key={t.id} value={t.id}>{t.username}</option>
             ))}
           </select>
         </div>
         <div className="form-group">
-          <label className="form-label">Alumnos (usernames separados por coma)</label>
-          <input className="input" placeholder="alumno1, alumno2, alumno3" value={studentsCsv} onChange={(e)=>setStudentsCsv(e.target.value)} />
+          <label className="form-label">Estudiantes (selección múltiple)</label>
+          <select
+            className="input"
+            multiple
+            value={selectedStudentIds.map(String)}
+            onChange={(e)=>{
+              const selected = Array.from(e.target.selectedOptions).map(o => Number(o.value));
+              setSelectedStudentIds(selected);
+            }}
+            style={{ minHeight: 160 }}
+          >
+            {studentOptions.map(s=>(
+              <option key={s.id} value={s.id}>{s.username}</option>
+            ))}
+          </select>
+          <label className="checkbox" style={{ marginTop: 8, display:"inline-flex", alignItems:"center", gap:8 }}>
+            <input type="checkbox" checked={replaceStudents} onChange={(e)=>setReplaceStudents(e.target.checked)} />
+            <span>Reemplazar estudiantes actuales</span>
+          </label>
         </div>
       </Modal>
     </>
@@ -187,40 +260,13 @@ function UsersAdmin() {
 
   const createUser = async () => {
     try {
-      if (!form.username.trim()) {
-        setError("El usuario es obligatorio.");
-        return;
-      }
-      // Validación rápida de duplicado en la lista actual
-      if (users.some((u:any) => String(u.username).toLowerCase() === form.username.trim().toLowerCase())) {
-        setError("El usuario ya existe.");
-        return;
-      }
-      const payload: any = { ...form, username: form.username.trim(), is_active: true };
-      if (!payload.password) delete payload.password;
+      const payload = { ...form };
+      if (!payload.password) delete (payload as any).password;
       const { data } = await api.post("/admin/users/", payload);
       setUsers(prev => [data, ...prev]);
       setCreateOpen(false);
       setForm({ username:"", email:"", password:"", role:"student", is_staff:false });
-    } catch (e:any) {
-      const data = e?.response?.data;
-      let message = e?.message || "No se pudo crear usuario";
-      if (typeof data === "string") {
-        message = data;
-      } else if (data && typeof data === "object") {
-        // Construir mensaje a partir de errores de campos
-        const parts: string[] = [];
-        Object.entries(data).forEach(([k, v]) => {
-          if (Array.isArray(v)) {
-            parts.push(`${k}: ${v.join(", ")}`);
-          } else if (typeof v === "string") {
-            parts.push(`${k}: ${v}`);
-          }
-        });
-        if (parts.length) message = parts.join(" | ");
-      }
-      setError(message);
-    }
+    } catch (e:any) { setError(e?.response?.data?.detail || "No se pudo crear usuario"); }
   };
 
   const toggleActive = async (u: AdminUser) => {
