@@ -1,5 +1,6 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from .models import Board, Profile
+from django.conf import settings
 
 
 class IsBoardMember(BasePermission):
@@ -49,5 +50,13 @@ class IsCourseOwner(BasePermission):
         if not board:
             return False
         return request.user == board.owner
+
+
+class IsSingleAdmin(BasePermission):
+    """
+    Permite acceso únicamente al usuario administrador único configurado.
+    """
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.username == settings.ADMIN_USERNAME)
 
 

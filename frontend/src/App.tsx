@@ -4,7 +4,7 @@ export default function App() {
   const isAuthenticated = Boolean(localStorage.getItem("access"));
   const navigate = useNavigate();
   const role = localStorage.getItem("role");
-  const isStaff = localStorage.getItem("is_staff") === "true";
+  const isAdmin = localStorage.getItem("is_admin") === "true";
   const username = localStorage.getItem("username");
   const themeStored = (typeof window !== "undefined" && localStorage.getItem("theme")) || "light";
   if (typeof document !== "undefined") {
@@ -32,7 +32,7 @@ export default function App() {
             <NavLink className={({isActive})=>`nav-link ${isActive?'active':''}`} to="/tasks">Tareas</NavLink>
             <NavLink className={({isActive})=>`nav-link ${isActive?'active':''}`} to="/courses">Cursos</NavLink>
             <NavLink className={({isActive})=>`nav-link ${isActive?'active':''}`} to="/calendar">Calendario</NavLink>
-            {isStaff && <NavLink className={({isActive})=>`nav-link ${isActive?'active':''}`} to="/admin">Administración</NavLink>}
+            {isAdmin && <NavLink className={({isActive})=>`nav-link ${isActive?'active':''}`} to="/admin">Administración</NavLink>}
           </div>
           <div className="nav">
             <span className="user-badge">

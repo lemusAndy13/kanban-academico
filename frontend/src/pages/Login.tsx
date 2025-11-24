@@ -31,8 +31,8 @@ export default function Login() {
     if (res.data.user_id) {
       localStorage.setItem("user_id", String(res.data.user_id));
     }
-    if (typeof res.data.is_staff !== "undefined") {
-      localStorage.setItem("is_staff", String(Boolean(res.data.is_staff)));
+    if (typeof res.data.is_admin !== "undefined") {
+      localStorage.setItem("is_admin", String(Boolean(res.data.is_admin)));
     }
   };
 
@@ -50,8 +50,8 @@ export default function Login() {
       let res;
       if (activeTab === "admin") {
         res = await api.post("/token/", { username, password });
-        const isStaff = Boolean(res.data?.is_staff);
-        if (!isStaff) {
+        const isAdmin = Boolean(res.data?.is_admin);
+        if (!isAdmin) {
           setError("Este usuario no es administrador.");
           return;
         }
@@ -61,7 +61,7 @@ export default function Login() {
       }
 
       persistAuth(res);
-      if (activeTab === "admin" || res?.data?.is_staff) {
+      if (activeTab === "admin" || res?.data?.is_admin) {
         navigate("/admin");
       } else {
         navigate("/boards");

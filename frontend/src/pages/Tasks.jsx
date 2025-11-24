@@ -154,8 +154,8 @@ export default function Tasks() {
       setTasks((prev) => [data, ...prev]);
       setCreateOpen(false);
       setForm({ list: "", title: "", description: "", due_date: "", priority: "low", max_points: 100 });
-    } catch {
-      setError("No se pudo crear la tarea");
+    } catch (e) {
+      setError(e?.response?.data?.detail || "No se pudo crear la tarea");
     }
   };
 

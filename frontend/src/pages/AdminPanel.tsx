@@ -3,14 +3,14 @@ import api from "../services/axiosConfig";
 import Modal from "../components/Modal";
 
 type Role = "student" | "teacher";
-type AdminUser = { id:number; username:string; email:string; is_active:boolean; is_staff:boolean; profile_role?: Role|null };
+type AdminUser = { id:number; username:string; email:string; is_active:boolean; profile_role?: Role|null };
 type Board = { id:number; code?:string; name:string; color:string; owner?: {id:number; username:string}; members?: Array<{id:number; username:string}> };
 
 export default function AdminPanel() {
-  const isStaff = localStorage.getItem("is_staff") === "true";
+  const isAdmin = localStorage.getItem("is_admin") === "true";
   const [tab, setTab] = useState<"courses"|"users">("courses");
 
-  if (!isStaff) {
+  if (!isAdmin) {
     return <div className="container"><h1>Administración</h1><p>No autorizado.</p></div>;
   }
   return (
@@ -243,8 +243,8 @@ function UsersAdmin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<{username:string; email:string; password:string; role:Role; is_staff:boolean}>({
-    username:"", email:"", password:"", role:"student", is_staff:false
+  const [form, setForm] = useState<{username:string; email:string; password:string; role:Role}>({
+    username:"", email:"", password:"", role:"student"
   });
 
   const loadUsers = async () => {
@@ -265,18 +265,13 @@ function UsersAdmin() {
       const { data } = await api.post("/admin/users/", payload);
       setUsers(prev => [data, ...prev]);
       setCreateOpen(false);
-      setForm({ username:"", email:"", password:"", role:"student", is_staff:false });
+      setForm({ username:"", email:"", password:"", role:"student" });
     } catch (e:any) { setError(e?.response?.data?.detail || "No se pudo crear usuario"); }
   };
 
   const toggleActive = async (u: AdminUser) => {
     try { await api.patch(`/admin/users/${u.id}/`, { is_active: !u.is_active }); await loadUsers(); }
     catch (e:any) { setError(e?.response?.data?.detail || "No se pudo actualizar estado"); }
-  };
-
-  const toggleStaff = async (u: AdminUser) => {
-    try { await api.patch(`/admin/users/${u.id}/`, { is_staff: !u.is_staff }); await loadUsers(); }
-    catch (e:any) { setError(e?.response?.data?.detail || "No se pudo actualizar permisos"); }
   };
 
   return (
@@ -298,7 +293,6 @@ function UsersAdmin() {
               <div className="muted">{u.email || "-"}</div>
               <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:10 }}>
                 <button className="btn btn-ghost" onClick={()=>toggleActive(u)}>{u.is_active ? "Desactivar" : "Activar"}</button>
-                <button className="btn btn-ghost" onClick={()=>toggleStaff(u)}>{u.is_staff ? "Quitar staff" : "Hacer staff"}</button>
               </div>
             </div>
           ))}
@@ -334,12 +328,6 @@ function UsersAdmin() {
               <option value="student">Estudiante</option>
               <option value="teacher">Catedrático</option>
             </select>
-          </div>
-          <div style={{ display:"flex", alignItems:"flex-end" }}>
-            <label className="checkbox">
-              <input type="checkbox" checked={form.is_staff} onChange={(e)=>setForm(f=>({...f, is_staff:e.target.checked}))} />
-              <span>Administrador (staff)</span>
-            </label>
           </div>
         </div>
       </Modal>

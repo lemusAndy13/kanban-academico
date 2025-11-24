@@ -16,6 +16,7 @@ from rest_framework import serializers
 from django.db import models
 from .permissions import IsBoardMember, CanDeleteBoard, IsCourseOwner
 from rest_framework.permissions import IsAdminUser
+from django.conf import settings
 from .serializers import AdminUserSerializer
  
 
@@ -38,7 +39,7 @@ class AnyRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["role"] = role
         data["username"] = user.username
         data["user_id"] = user.id
-        data["is_staff"] = user.is_staff
+        data["is_admin"] = (user.username == settings.ADMIN_USERNAME)
         try:
             data["institution_id"] = user.profile.institution_id  # type: ignore[attr-defined]
         except Exception:
@@ -70,7 +71,7 @@ class BaseRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["role"] = role
         data["username"] = user.username
         data["user_id"] = user.id
-        data["is_staff"] = user.is_staff
+        data["is_admin"] = (user.username == settings.ADMIN_USERNAME)
         try:
             data["institution_id"] = user.profile.institution_id  # type: ignore[attr-defined]
         except Exception:
@@ -500,7 +501,7 @@ class ActivityViewSet(viewsets.ReadOnlyModelViewSet):
 class AdminUserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('username')
     serializer_class = AdminUserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsSingleAdmin]
 
     @action(detail=True, methods=['post'])
     def set_password(self, request, pk=None):

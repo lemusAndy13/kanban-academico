@@ -19,8 +19,8 @@ export default function AdminLogin() {
       }
       setLoading(true);
       const res = await api.post("/token/", { username, password });
-      const isStaff = Boolean(res.data?.is_staff);
-      if (!isStaff) {
+      const isAdmin = Boolean(res.data?.is_admin);
+      if (!isAdmin) {
         setError("Este usuario no es administrador.");
         return;
       }
@@ -28,9 +28,7 @@ export default function AdminLogin() {
       if (res.data.refresh) localStorage.setItem("refresh", res.data.refresh);
       if (res.data.role) localStorage.setItem("role", res.data.role);
       if (res.data.username) localStorage.setItem("username", res.data.username);
-      if (typeof res.data.is_staff !== "undefined") {
-        localStorage.setItem("is_staff", String(isStaff));
-      }
+      localStorage.setItem("is_admin", String(isAdmin));
       navigate("/admin");
     } catch (err) {
       setError(err?.response?.data?.detail || "Error al iniciar sesión");

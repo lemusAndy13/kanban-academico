@@ -102,3 +102,7 @@ SPECTACULAR_SETTINGS = {
 # Media (para adjuntos de tareas)
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Administrador único para el panel de administración del sistema
+# Cambia esta variable de entorno para usar otro usuario como admin.
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin1")
