@@ -57,9 +57,11 @@ class ChecklistItemSerializer(serializers.ModelSerializer):
 
 class AttachmentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField(read_only=True)
+    uploader = UserSerializer(source='uploaded_by', read_only=True)
     class Meta:
         model = Attachment
-        fields = ['id','card','url','file','file_url','name','created_at']
+        fields = ['id','card','url','file','file_url','name','created_at','uploader','is_submission','score','feedback','graded_by','graded_at']
+        read_only_fields = ['uploader','graded_by','graded_at','is_submission']
 
     def get_file_url(self, obj):
         try:

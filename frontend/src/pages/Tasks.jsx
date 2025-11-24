@@ -25,6 +25,10 @@ export default function Tasks() {
   const [attachCard, setAttachCard] = useState(null);
   const [attachUrl, setAttachUrl] = useState("");
   const [attachFile, setAttachFile] = useState(null);
+  const [viewAttOpen, setViewAttOpen] = useState(false);
+  const [viewCard, setViewCard] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  const [grades, setGrades] = useState({});
 
   // Create Task Modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -200,6 +204,17 @@ export default function Tasks() {
                   <button className="btn btn-ghost" onClick={() => { setAttachCard(t); setAttachUrl(""); setAttachFile(null); setAttachOpen(true); }}>
                     Adjuntar
                   </button>
+                  <button className="btn btn-ghost" onClick={async ()=>{
+                    setViewCard(t);
+                    try {
+                      const { data } = await api.get(`/attachments/?card=${t.id}`);
+                      setAttachments(data || []);
+                      setGrades({});
+                    } catch { setAttachments([]); }
+                    setViewAttOpen(true);
+                  }}>
+                    Ver adjuntos
+                  </button>
                 </div>
               </div>
             );
@@ -238,6 +253,75 @@ export default function Tasks() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={viewAttOpen}
+        title={viewCard ? `Adjuntos - ${viewCard.title}` : "Adjuntos"}
+        onClose={() => setViewAttOpen(false)}
+        footer={<button className="btn btn-ghost" onClick={()=>setViewAttOpen(false)}>Cerrar</button>}
+      >
+        {attachments.length === 0 && <div className="empty">No hay adjuntos.</div>}
+        {attachments.length > 0 && (
+          <div className="list">
+            {attachments.map((a)=>(
+              <div key={a.id} className="item" style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:8 }}>
+                <div>
+                  <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                    {a.file_url && <a className="link" href={a.file_url} target="_blank" rel="noreferrer">Archivo</a>}
+                    {a.url && <a className="link" href={a.url} target="_blank" rel="noreferrer">Enlace</a>}
+                    <span className="pill">{a.uploader?.username || "—"}</span>
+                    {a.is_submission && <span className="pill" style={{ background:"#e8f5e9", borderColor:"#c8e6c9" }}>Entrega</span>}
+                  </div>
+                  {(a.feedback || a.score !== null) && (
+                    <div className="muted" style={{ marginTop:6 }}>
+                      {typeof a.score === "number" ? `Puntaje: ${a.score}/100. ` : ""}{a.feedback || ""}
+                    </div>
+                  )}
+                </div>
+                {role === "teacher" && (
+                  <div style={{ minWidth: 260 }}>
+                    <div className="row" style={{ gap:6 }}>
+                      <input
+                        className="input"
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder={typeof a.score === "number" ? String(a.score) : "Puntaje"}
+                        value={grades[a.id]?.score ?? ""}
+                        onChange={(e)=>setGrades(g=>({ ...g, [a.id]: { ...(g[a.id]||{}), score: e.target.value } }))}
+                        style={{ width: 90 }}
+                      />
+                      <input
+                        className="input"
+                        placeholder={a.feedback || "Comentario"}
+                        value={grades[a.id]?.feedback ?? ""}
+                        onChange={(e)=>setGrades(g=>({ ...g, [a.id]: { ...(g[a.id]||{}), feedback: e.target.value } }))}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="btn btn-primary"
+                        onClick={async ()=>{
+                          try {
+                            const payload = {};
+                            if (grades[a.id]?.score !== undefined && grades[a.id]?.score !== "") payload.score = Number(grades[a.id].score);
+                            if (grades[a.id]?.feedback !== undefined) payload.feedback = grades[a.id].feedback;
+                            await api.post(`/attachments/${a.id}/grade/`, payload);
+                            const { data } = await api.get(`/attachments/?card=${viewCard.id}`);
+                            setAttachments(data || []);
+                            setGrades({});
+                          } catch { setError("No se pudo calificar"); }
+                        }}
+                      >
+                        Calificar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </Modal>

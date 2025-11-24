@@ -109,6 +109,12 @@ class Attachment(models.Model):
     url = models.URLField(null=True, blank=True)
     file = models.FileField(upload_to='attachments/', null=True, blank=True)
     name = models.CharField(max_length=200, blank=True)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='attachments')
+    is_submission = models.BooleanField(default=False)
+    score = models.IntegerField(null=True, blank=True)
+    feedback = models.TextField(blank=True)
+    graded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='graded_attachments')
+    graded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     def __str__(self):

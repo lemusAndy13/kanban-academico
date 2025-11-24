@@ -422,6 +422,15 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     serializer_class = AttachmentSerializer
     permission_classes = [permissions.IsAuthenticated, IsBoardMember]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Filtrar por tarjeta si viene en query
+        card_id = self.request.query_params.get('card')
+        if card_id:
+            qs = qs.filter(card_id=card_id)
+        # Limitar a adjuntos de boards donde el usuario es miembro
+        return qs.filter(card__list__board__members=self.request.user)
+
     def perform_create(self, serializer):
         card = serializer.validated_data.get("card")
         if not card:
@@ -429,11 +438,44 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         # Verificar que el usuario sea miembro del curso
         if not card.list.board.members.filter(id=self.request.user.id).exists():
             raise serializers.ValidationError({"detail": "No autorizado para adjuntar en este curso"})
-        attachment = serializer.save()
+        # Marcar como entrega si es estudiante
+        is_submission = False
+        try:
+            is_submission = (self.request.user.profile.role == 'student')  # type: ignore[attr-defined]
+        except Profile.DoesNotExist:
+            is_submission = False
+        attachment = serializer.save(uploaded_by=self.request.user, is_submission=is_submission)
         # Si no se envió nombre y hay archivo, usar filename
         if not attachment.name and attachment.file:
             attachment.name = attachment.file.name
             attachment.save(update_fields=["name"])
+
+    @action(detail=True, methods=['post','patch'])
+    def grade(self, request, pk=None):
+        """
+        Calificar una entrega: score (0-100) y feedback.
+        Solo el catedrático (owner) del curso puede calificar.
+        """
+        attachment = self.get_object()
+        board = attachment.card.list.board
+        if request.user != board.owner:
+            return Response({"detail": "Solo el catedrático del curso puede calificar."}, status=403)
+        score = request.data.get('score')
+        feedback = request.data.get('feedback', '')
+        try:
+            if score is not None:
+                score = int(score)
+                if score < 0 or score > 100:
+                    return Response({"detail": "score debe estar entre 0 y 100."}, status=400)
+                attachment.score = score
+        except ValueError:
+            return Response({"detail": "score inválido"}, status=400)
+        if feedback is not None:
+            attachment.feedback = str(feedback)
+        attachment.graded_by = request.user
+        attachment.graded_at = timezone.now()
+        attachment.save()
+        return Response(AttachmentSerializer(attachment, context={'request': request}).data, status=200)
 
 
 class ActivityViewSet(viewsets.ReadOnlyModelViewSet):
