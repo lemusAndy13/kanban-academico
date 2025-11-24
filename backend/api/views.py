@@ -3,11 +3,11 @@ from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.auth.models import User
-from .models import Board, List, Card, Comment, Profile, Label, ChecklistItem, Attachment, Activity
+from .models import Board, List, Card, Comment, Profile, Label, ChecklistItem, Attachment, Activity, Announcement
 from .serializers import (
     BoardSerializer, ListSerializer, CardSerializer,
     CommentSerializer, UserSerializer, LabelSerializer,
-    ChecklistItemSerializer, AttachmentSerializer, ActivitySerializer
+    ChecklistItemSerializer, AttachmentSerializer, ActivitySerializer, AnnouncementSerializer
 )
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -118,10 +118,11 @@ class TeacherLoginView(TokenObtainPairView):
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     full_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    role = serializers.ChoiceField(choices=[('student','student'),('teacher','teacher')], required=False, default='student', write_only=True)
 
     class Meta:
         model = User
-        fields = ('email', 'password', 'full_name')
+        fields = ('email', 'password', 'full_name', 'role')
 
     def validate_email(self, value):
         email_norm = (value or '').strip().lower()
@@ -132,16 +133,17 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         email = validated_data.get('email', '').strip().lower()
         full_name = validated_data.get('full_name', '').strip()
+        role = validated_data.get('role', 'student')
         username = email  # usar correo como username de login
         user = User(username=username, email=email)
         if full_name:
             user.first_name = full_name
         user.set_password(validated_data['password'])
         user.save()
-        # Crear perfil con ID institucional
-        profile = Profile.objects.create(user=user)
-        # Generar ID institucional basado en rol (por defecto student)
-        prefix = 'ALU' if profile.role == 'student' else 'DOC'
+        # Crear perfil con rol indicado
+        profile = Profile.objects.create(user=user, role=role)
+        # Generar ID institucional basado en rol
+        prefix = 'ALU' if role == 'student' else 'DOC'
         seq = Profile.objects.filter(role=profile.role, institution_id__startswith=prefix).count() + 1
         profile.institution_id = f"{prefix}-{seq:06d}"
         profile.save()
@@ -223,6 +225,17 @@ class BoardViewSet(viewsets.ModelViewSet):
         board.owner = user
         board.save()
         board.members.add(user)
+        # Publicación principal con información del curso
+        teacher_name = user.first_name or user.username
+        try:
+            institution = user.profile.institution_id  # type: ignore[attr-defined]
+        except Exception:
+            institution = None
+        main_content = f"Docente: {teacher_name}\nCorreo: {user.email or '-'}\nInstitución: {institution or '-'}"
+        Announcement.objects.update_or_create(
+            board=board, is_pinned=True, title="Información del curso",
+            defaults={"content": main_content, "created_by": request.user},
+        )
         return Response(BoardSerializer(board).data, status=200)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
@@ -524,6 +537,24 @@ class ActivityViewSet(viewsets.ReadOnlyModelViewSet):
         if card_id:
             qs = qs.filter(card_id=card_id)
         return qs
+
+
+class AnnouncementViewSet(viewsets.ModelViewSet):
+    serializer_class = AnnouncementSerializer
+    permission_classes = [permissions.IsAuthenticated, IsBoardMember]
+    queryset = Announcement.objects.all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        qs = qs.filter(board__members=user)
+        board_id = self.request.query_params.get('board')
+        if board_id:
+            qs = qs.filter(board_id=board_id)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
 
 class AdminUserViewSet(viewsets.ModelViewSet):

@@ -10,6 +10,13 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"student"|"teacher"|"admin">("student");
   const [showPassword, setShowPassword] = useState(false);
+  const [showSignup, setShowSignup] = useState(false);
+  const [sName, setSName] = useState("");
+  const [sEmail, setSEmail] = useState("");
+  const [sPass, setSPass] = useState("");
+  const [sError, setSError] = useState("");
+  const [sRole, setSRole] = useState<"student"|"teacher">("student");
+  const [sLoading, setSLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -78,6 +85,29 @@ export default function Login() {
     }
   };
 
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    try {
+      setSError("");
+      if (!sEmail || !sPass) {
+        setSError("Ingresa correo y contraseña");
+        return;
+      }
+      setSLoading(true);
+      // Crear cuenta (por defecto será estudiante)
+      await api.post("/register/", { email: sEmail, password: sPass, full_name: sName, role: sRole });
+      // Autologin como estudiante con correo+contraseña
+      const endpoint = sRole === "teacher" ? "/token/teacher/" : "/token/student/";
+      const res = await api.post(endpoint, { username: sEmail, password: sPass });
+      persistAuth(res);
+      navigate("/boards");
+    } catch (err) {
+      setSError(err?.response?.data?.email?.[0] || err?.response?.data?.detail || "No se pudo crear la cuenta");
+    } finally {
+      setSLoading(false);
+    }
+  };
+
   return (
     <div className="center-screen bg-gradient">
       <div className="login-layout">
@@ -124,7 +154,7 @@ export default function Login() {
                 id="username"
                 className="input"
                 type="text"
-                placeholder="tu_usuario"
+                placeholder="tu correo o usuario"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoFocus
@@ -161,8 +191,43 @@ export default function Login() {
                 {loading ? "Entrando..." : "Entrar"}
               </button>
             </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button type="button" className="btn btn-ghost" onClick={()=>setShowSignup((v)=>!v)}>
+                {showSignup ? "Ocultar registro" : "Crear cuenta"}
+              </button>
+            </div>
           </form>
         </div>
+        {showSignup && (
+          <div className="card">
+            <h1>Crear cuenta</h1>
+            {sError && <div className="alert">{sError}</div>}
+            <form onSubmit={handleSignup}>
+              <div className="form-group">
+                <label className="form-label">Tipo de cuenta</label>
+                <select className="input" value={sRole} onChange={(e)=>setSRole(e.target.value as any)}>
+                  <option value="student">Estudiante</option>
+                  <option value="teacher">Catedrático</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Nombre completo (opcional)</label>
+                <input className="input" value={sName} onChange={(e)=>setSName(e.target.value)} placeholder="Ej. Ana Pérez" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Correo</label>
+                <input className="input" type="email" value={sEmail} onChange={(e)=>setSEmail(e.target.value)} placeholder="tucorreo@dominio.com" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Contraseña</label>
+                <input className="input" type="password" value={sPass} onChange={(e)=>setSPass(e.target.value)} placeholder="********" />
+              </div>
+              <div className="row" style={{ justifyContent: "flex-end" }}>
+                <button className="btn btn-primary" disabled={sLoading}>{sLoading ? "Creando..." : "Crear y entrar"}</button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     </div>
   );

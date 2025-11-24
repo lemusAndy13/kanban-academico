@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Profile, Board, List, Card, Comment, Label, ChecklistItem, Attachment, Activity
+from .models import Announcement
 from django.db.models import Q
 
 class UserSerializer(serializers.ModelSerializer):
@@ -78,6 +79,12 @@ class ActivitySerializer(serializers.ModelSerializer):
     class Meta:
         model = Activity
         fields = ['id','card','board','actor','action','meta','created_at']
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    created_by = UserSerializer(read_only=True)
+    class Meta:
+        model = Announcement
+        fields = ['id','board','title','content','is_pinned','created_by','created_at']
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
