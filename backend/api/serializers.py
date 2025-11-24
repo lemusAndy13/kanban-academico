@@ -31,7 +31,7 @@ class CardSerializer(serializers.ModelSerializer):
     board = serializers.SerializerMethodField(read_only=True)
     class Meta:
         model = Card
-        fields = ['id','list','board','title','description','due_date','priority','position','created_by','assignees','labels']
+        fields = ['id','list','board','title','description','due_date','priority','max_points','position','created_by','assignees','labels']
 
     def get_board(self, obj):
         try:

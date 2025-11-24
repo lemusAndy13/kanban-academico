@@ -41,6 +41,7 @@ export default function Tasks() {
     description: "",
     due_date: "",
     priority: "low",
+    max_points: 100,
   });
 
   useEffect(() => {
@@ -148,10 +149,11 @@ export default function Tasks() {
       // Vacíos a null
       if (!payload.description) delete payload.description;
       if (!payload.due_date) delete payload.due_date;
+      if (!payload.max_points && payload.max_points !== 0) delete payload.max_points;
       const { data } = await api.post("/cards/", payload);
       setTasks((prev) => [data, ...prev]);
       setCreateOpen(false);
-      setForm({ list: "", title: "", description: "", due_date: "", priority: "low" });
+      setForm({ list: "", title: "", description: "", due_date: "", priority: "low", max_points: 100 });
     } catch {
       setError("No se pudo crear la tarea");
     }
@@ -277,7 +279,7 @@ export default function Tasks() {
                   </div>
                   {(a.feedback || a.score !== null) && (
                     <div className="muted" style={{ marginTop:6 }}>
-                      {typeof a.score === "number" ? `Puntaje: ${a.score}/100. ` : ""}{a.feedback || ""}
+                      {typeof a.score === "number" ? `Puntaje: ${a.score}/${viewCard?.max_points ?? 100}. ` : ""}{a.feedback || ""}
                     </div>
                   )}
                 </div>
@@ -288,8 +290,8 @@ export default function Tasks() {
                         className="input"
                         type="number"
                         min={0}
-                        max={100}
-                        placeholder={typeof a.score === "number" ? String(a.score) : "Puntaje"}
+                        max={viewCard?.max_points ?? 100}
+                        placeholder={typeof a.score === "number" ? String(a.score) : `Puntaje (0-${viewCard?.max_points ?? 100})`}
                         value={grades[a.id]?.score ?? ""}
                         onChange={(e)=>setGrades(g=>({ ...g, [a.id]: { ...(g[a.id]||{}), score: e.target.value } }))}
                         style={{ width: 90 }}
@@ -315,7 +317,7 @@ export default function Tasks() {
                           } catch { setError("No se pudo calificar"); }
                         }}
                       >
-                        Calificar
+                        Guardar
                       </button>
                     </div>
                   </div>
@@ -457,6 +459,19 @@ export default function Tasks() {
               <option value="high">Alta</option>
             </select>
           </div>
+          {role === "teacher" && (
+            <div className="form-group" style={{ width: 180 }}>
+              <label className="form-label">Puntos máximos</label>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={1000}
+                value={form.max_points}
+                onChange={(e)=>setForm(f=>({ ...f, max_points: Number(e.target.value) }))}
+              />
+            </div>
+          )}
         </div>
       </Modal>
     </div>

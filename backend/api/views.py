@@ -462,11 +462,13 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Solo el catedrático del curso puede calificar."}, status=403)
         score = request.data.get('score')
         feedback = request.data.get('feedback', '')
+        # Limitar por puntos máximos de la tarea (default 100)
+        max_points = attachment.card.max_points or 100
         try:
             if score is not None:
                 score = int(score)
-                if score < 0 or score > 100:
-                    return Response({"detail": "score debe estar entre 0 y 100."}, status=400)
+                if score < 0 or score > max_points:
+                    return Response({"detail": f"score debe estar entre 0 y {max_points}."}, status=400)
                 attachment.score = score
         except ValueError:
             return Response({"detail": "score inválido"}, status=400)

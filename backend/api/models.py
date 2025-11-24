@@ -74,6 +74,7 @@ class Card(models.Model):
     due_date = models.DateTimeField(null=True, blank=True)
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='low')
     position = models.IntegerField(default=0)
+    max_points = models.IntegerField(null=True, blank=True, default=100)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_cards')
     assignees = models.ManyToManyField(User, related_name='assigned_cards', blank=True)
     labels = models.ManyToManyField('Label', related_name='cards', blank=True)
