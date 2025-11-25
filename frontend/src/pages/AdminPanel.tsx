@@ -43,6 +43,7 @@ function CoursesAdmin() {
   const [teacherCode, setTeacherCode] = useState("");
   const [studentsCodes, setStudentsCodes] = useState("");
   const [resolveMsg, setResolveMsg] = useState("");
+  const [studentCodeSingle, setStudentCodeSingle] = useState("");
 
   useEffect(()=>{ loadBoards(); loadUsers(); }, []);
 
@@ -94,6 +95,8 @@ function CoursesAdmin() {
       setBoards(prev => [data, ...prev]);
       setCreateOpen(false);
       setForm({ name:"", color:"#1976d2" });
+      // Abrir inmediatamente el modal de asignación para agregar participantes al nuevo curso
+      setManageOpen(data);
     } catch (e:any) {
       setError(e?.response?.data?.name?.[0] || "No se pudo crear el curso.");
     } finally {
@@ -231,21 +234,76 @@ function CoursesAdmin() {
           {resolveMsg && <div className="muted" style={{ marginTop:6 }}>{resolveMsg}</div>}
         </div>
         <div className="form-group">
-          <label className="form-label">Estudiantes (selección múltiple)</label>
-          <select
-            className="input"
-            multiple
-            value={selectedStudentIds.map(String)}
-            onChange={(e)=>{
-              const selected = Array.from(e.target.selectedOptions).map(o => Number(o.value));
-              setSelectedStudentIds(selected);
-            }}
-            style={{ minHeight: 160 }}
-          >
-            {studentOptions.map(s=>(
-              <option key={s.id} value={s.id}>{s.name || s.username} {s.institution_id ? `(${s.institution_id})` : ""}</option>
-            ))}
-          </select>
+          <label className="form-label">Estudiantes a agregar</label>
+          {/* Lista compacta solo con los estudiantes que se agregarán */}
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8, padding:8, border:"1px solid var(--border)", borderRadius:8, minHeight: 48 }}>
+            {selectedStudentIds.length === 0 && <span className="muted">Aún no has agregado estudiantes.</span>}
+            {selectedStudentIds.map(id => {
+              const u = adminUsers.find(x => x.id === id);
+              if (!u) return null;
+              return (
+                <span key={id} className="pill" style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+                  {u.name || u.username} {u.institution_id ? `(${u.institution_id})` : ""}
+                  <button
+                    className="btn btn-ghost"
+                    onClick={()=> setSelectedStudentIds(prev => prev.filter(x => x !== id))}
+                    title="Quitar de la lista"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+          <div className="row" style={{ marginTop:8, gap:8 }}>
+            <button
+              className="btn btn-ghost"
+              onClick={async ()=>{
+                if (!manageOpen || selectedStudentIds.length === 0) return;
+                try {
+                  const usernames = selectedStudentIds
+                    .map(id => adminUsers.find(u => u.id === id)?.username)
+                    .filter(Boolean) as string[];
+                  await api.post(`/boards/${manageOpen.id}/set_students/`, { usernames, replace: false });
+                  setResolveMsg(`Agregados ${usernames.length} estudiante(s) al curso.`);
+                } catch (e:any) {
+                  setResolveMsg(e?.response?.data?.detail || "No se pudo agregar estudiantes");
+                }
+              }}
+            >
+              Agregar al curso
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={async ()=>{
+                setSelectedStudentIds([]);
+                setResolveMsg("La lista para agregar fue vaciada.");
+              }}
+            >
+              Vaciar lista
+            </button>
+          </div>
+          {/* Agregar por un ID rápido */}
+          <div className="row" style={{ marginTop:8, gap:8 }}>
+            <input className="input" placeholder="ID (ALU-000001)" value={studentCodeSingle} onChange={(e)=>setStudentCodeSingle(e.target.value)} />
+            <button className="btn btn-ghost" onClick={async ()=>{
+              setResolveMsg("");
+              const code = studentCodeSingle.trim();
+              if (!code) return;
+              try {
+                const { data } = await api.get(`/admin/users/by-institution-id/`, { params: { id: code } });
+                if (data?.id) {
+                  setSelectedStudentIds(prev => prev.includes(Number(data.id)) ? prev : [...prev, Number(data.id)]);
+                  setResolveMsg(`Agregado a la lista: ${data.name || data.username} (${data.institution_id || ""})`);
+                  setStudentCodeSingle("");
+                } else {
+                  setResolveMsg("No encontrado");
+                }
+              } catch {
+                setResolveMsg("No encontrado");
+              }
+            }}>Agregar ID</button>
+          </div>
           <div className="row" style={{ marginTop:8, gap:8 }}>
             <input className="input" placeholder="IDs (ALU-000001, ALU-000002)" value={studentsCodes} onChange={(e)=>setStudentsCodes(e.target.value)} />
             <button className="btn btn-ghost" onClick={async ()=>{

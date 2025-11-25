@@ -1,7 +1,9 @@
 // src/pages/Tasks.jsx
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api from "../services/axiosConfig";
+import { useFilters } from "../store/useFilters";
 import Modal from "../components/Modal";
 
 export default function Tasks() {
@@ -11,8 +13,11 @@ export default function Tasks() {
 
   const role = useMemo(() => localStorage.getItem("role"), []);
   const myId = useMemo(() => Number(localStorage.getItem("user_id") || 0), []);
-  const [filterAssignee, setFilterAssignee] = useState("all");
-  const [filterDue, setFilterDue] = useState("all"); // all | 7 | 30
+  // Filtros (Zustand)
+  const { q, labelId, assignee, dueBefore, dueAfter, set: setFilters, reset } = useFilters();
+  const [labels, setLabels] = useState([]);
+  const [assigneeOptions, setAssigneeOptions] = useState([]);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Assign Modal state
   const [assignOpen, setAssignOpen] = useState(false);
@@ -48,26 +53,51 @@ export default function Tasks() {
   });
 
   useEffect(() => {
+    // Inicializar filtros desde la URL (si existen)
+    const qUrl = searchParams.get("q") || "";
+    const labelUrl = searchParams.get("label") || "";
+    const assigneeUrl = searchParams.get("assignee") || "all";
+    const dueBUrl = searchParams.get("due_before") || "";
+    const dueAUrl = searchParams.get("due_after") || "";
+    const parsedAssignee = assigneeUrl === "all" || assigneeUrl === "me" ? assigneeUrl : Number(assigneeUrl);
+    setFilters({
+      q: qUrl,
+      labelId: labelUrl ? Number(labelUrl) : "",
+      assignee: parsedAssignee,
+      dueBefore: dueBUrl,
+      dueAfter: dueAUrl,
+    });
     fetchTasks();
+    // cargar etiquetas una sola vez
+    api.get("/labels/").then(r => setLabels(r.data || [])).catch(()=>setLabels([]));
+    // armar opciones de responsables a partir de miembros de todos mis boards
+    api.get("/boards/").then(r => {
+      const uniq = new Map();
+      (r.data || []).forEach(b => {
+        (b.members || []).forEach(m => {
+          if (!uniq.has(m.id)) {
+            const name = m.full_name || m.username;
+            uniq.set(m.id, { id: m.id, name });
+          }
+        });
+      });
+      const list = Array.from(uniq.values());
+      setAssigneeOptions(list);
+    }).catch(()=> setAssigneeOptions([]));
   }, []);
 
   const fetchTasks = async () => {
     try {
       setError("");
       setLoading(true);
-      let qs = "/cards/";
-      const params = [];
-      if (filterAssignee === "me" && myId) params.push(`assignee=${myId}`);
-      if (filterDue !== "all") {
-        const now = new Date();
-        const target = new Date(now.getTime() + Number(filterDue) * 24*60*60*1000);
-        const yyyy = target.getFullYear();
-        const mm = String(target.getMonth()+1).padStart(2,"0");
-        const dd = String(target.getDate()).padStart(2,"0");
-        params.push(`due_before=${yyyy}-${mm}-${dd}`);
-      }
-      if (params.length) qs += `?${params.join("&")}`;
-      const { data } = await api.get(qs);
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (labelId) params.set("label", String(labelId));
+      if (assignee === "me" && myId) params.set("assignee", String(myId));
+      if (typeof assignee === "number") params.set("assignee", String(assignee));
+      if (dueBefore) params.set("due_before", dueBefore);
+      if (dueAfter) params.set("due_after", dueAfter);
+      const { data } = await api.get(`/cards/search/?${params.toString()}`);
       setTasks(data);
       // Cargar “mi nota” y estado por tarjeta si soy estudiante
       if (role === "student" && Array.isArray(data)) {
@@ -233,16 +263,81 @@ export default function Tasks() {
         <h1 style={{ margin: 0 }}>Tareas</h1>
         <div className="toolbar">
           <span className="pill">Total: {tasks.length}</span>
-          <select className="input" value={filterAssignee} onChange={(e)=>{setFilterAssignee(e.target.value);}} style={{ width: 160 }}>
-            <option value="all">Asignadas (todas)</option>
+          <input
+            className="input"
+            placeholder="Buscar…"
+            value={q}
+            onChange={(e)=>setFilters({ q: e.target.value })}
+            style={{ width: 180 }}
+          />
+          <select
+            className="input"
+            value={labelId || ""}
+            onChange={(e)=>setFilters({ labelId: e.target.value || "" })}
+            style={{ width: 180 }}
+          >
+            <option value="">Etiqueta (todas)</option>
+            {labels.map(l=>(
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+          <select
+            className="input"
+            value={String(assignee)}
+            onChange={(e)=>{
+              const val = e.target.value;
+              setFilters({ assignee: val === "all" || val === "me" ? val : Number(val) });
+            }}
+            style={{ width: 180 }}
+          >
+            <option value="all">Responsable (cualquiera)</option>
             <option value="me">Asignadas a mí</option>
+            {assigneeOptions.map(u=>(
+              <option key={u.id} value={String(u.id)}>{u.name}</option>
+            ))}
           </select>
-          <select className="input" value={filterDue} onChange={(e)=>{setFilterDue(e.target.value);}} style={{ width: 180 }}>
-            <option value="all">Vencimiento (todas)</option>
-            <option value="7">Próximos 7 días</option>
-            <option value="30">Próximos 30 días</option>
-          </select>
-          <button className="btn btn-ghost" onClick={fetchTasks}>Aplicar</button>
+          <input
+            className="input"
+            type="date"
+            value={dueAfter}
+            onChange={(e)=>setFilters({ dueAfter: e.target.value })}
+            style={{ width: 150 }}
+            title="Desde (fecha de vencimiento)"
+          />
+          <input
+            className="input"
+            type="date"
+            value={dueBefore}
+            onChange={(e)=>setFilters({ dueBefore: e.target.value })}
+            style={{ width: 150 }}
+            title="Hasta (fecha de vencimiento)"
+          />
+          <button
+            className="btn btn-ghost"
+            onClick={()=>{
+              const sp = {};
+              if (q) sp.q = q;
+              if (labelId) sp.label = String(labelId);
+              if (assignee === "me") sp.assignee = "me";
+              else if (typeof assignee === "number") sp.assignee = String(assignee);
+              if (dueAfter) sp.due_after = dueAfter;
+              if (dueBefore) sp.due_before = dueBefore;
+              setSearchParams(sp);
+              fetchTasks();
+            }}
+          >
+            Aplicar
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={()=>{
+              reset();
+              setSearchParams({});
+              fetchTasks();
+            }}
+          >
+            Limpiar
+          </button>
           {role === "teacher" && (
             <button className="btn btn-primary btn-large" onClick={openCreate}>
               Nueva tarea

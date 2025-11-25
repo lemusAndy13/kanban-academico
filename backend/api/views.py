@@ -19,7 +19,7 @@ from rest_framework.permissions import IsAdminUser
 from django.conf import settings
 from django.utils import timezone
 from .serializers import AdminUserSerializer
- 
+from rest_framework.views import APIView
 
 
 # -----------------------
@@ -59,6 +59,14 @@ class AnyRoleTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class LoginView(TokenObtainPairView):
     """Devuelve access y refresh JWT para cualquier usuario. Incluye role e is_staff."""
+    serializer_class = AnyRoleTokenObtainPairSerializer
+
+
+class AuthLoginView(TokenObtainPairView):
+    """
+    Nuevo endpoint de autenticación: /api/auth/login/
+    Alias de /api/token/ que reutiliza AnyRoleTokenObtainPairSerializer.
+    """
     serializer_class = AnyRoleTokenObtainPairSerializer
 
 
@@ -157,6 +165,63 @@ def register_view(request):
     serializer.is_valid(raise_exception=True)
     user = serializer.save()
     return Response(UserSerializer(user).data, status=201)
+
+
+class AuthRegisterView(APIView):
+    """
+    /api/auth/register
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserSerializer(user).data, status=201)
+
+
+class MeView(APIView):
+    """
+    /api/me  -> GET perfil del usuario autenticado
+             -> PATCH { full_name?, role? } (role solo admin)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        u: User = request.user  # type: ignore
+        try:
+            role = u.profile.role  # type: ignore[attr-defined]
+            institution_id = u.profile.institution_id  # type: ignore[attr-defined]
+        except Profile.DoesNotExist:
+            role = 'student'
+            institution_id = None
+        return Response({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "full_name": u.first_name,
+            "role": role,
+            "institution_id": institution_id,
+            "is_admin": (u.username == settings.ADMIN_USERNAME),
+        })
+
+    def patch(self, request):
+        u: User = request.user  # type: ignore
+        full_name = request.data.get("full_name")
+        new_role = request.data.get("role")
+        if isinstance(full_name, str):
+            u.first_name = full_name
+            u.save()
+        if new_role and (u.username == settings.ADMIN_USERNAME):
+            try:
+                prof, _ = Profile.objects.get_or_create(user=u)
+                if new_role in ['student', 'teacher']:
+                    prof.role = new_role
+                    prof.save()
+            except Exception:
+                pass
+        return self.get(request)
 
 # -----------------------
 # CURSOS POR DEFECTO (CATEDRÁTICO)
@@ -269,6 +334,29 @@ class BoardViewSet(viewsets.ModelViewSet):
             board.members.add(*student_users)
         return Response({"detail": "Estudiantes actualizados", "count": len(student_users)}, status=200)
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def remove_students(self, request, pk=None):
+        """
+        Quita estudiantes del curso.
+        Payload: { "usernames": ["student1","student2"] }
+        """
+        board = self.get_object()
+        usernames = request.data.get("usernames")
+        if not usernames or not isinstance(usernames, list):
+            return Response({"detail": "usernames debe ser lista de strings"}, status=400)
+        users = list(User.objects.filter(username__in=usernames))
+        # Filtrar estudiantes
+        student_users = []
+        for u in users:
+            try:
+                if u.profile.role == "student":  # type: ignore[attr-defined]
+                    student_users.append(u)
+            except Profile.DoesNotExist:
+                continue
+        if student_users:
+            board.members.remove(*student_users)
+        return Response({"detail": "Estudiantes removidos", "count": len(student_users)}, status=200)
+
     @action(detail=True, methods=['post'])
     def invite(self, request, pk=None):
         board = self.get_object()
@@ -293,6 +381,33 @@ class BoardViewSet(viewsets.ModelViewSet):
         board = self.get_object()
         qs = board.members.all().order_by('username')
         return Response(UserSerializer(qs, many=True).data, status=200)
+
+    # Nuevas acciones para listas y actividad del tablero
+    @action(detail=True, methods=['get', 'post'], url_path='lists')
+    def lists_action(self, request, pk=None):
+        """
+        GET: listas del board
+        POST: crear nueva lista en el board (campos: title, position opcional)
+        """
+        board = self.get_object()
+        if request.method.lower() == 'get':
+            qs = board.lists.order_by('position')
+            ser = ListSerializer(qs, many=True)
+            return Response(ser.data, status=200)
+        data = request.data.copy()
+        data['board'] = board.id
+        ser = ListSerializer(data=data)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data, status=201)
+
+    @action(detail=True, methods=['get'], url_path='activity')
+    def board_activity(self, request, pk=None):
+        board = self.get_object()
+        qs = Activity.objects.filter(board=board).order_by('-created_at')
+        ser = ActivitySerializer(qs, many=True)
+        return Response(ser.data, status=200)
+
 
 class ListViewSet(viewsets.ModelViewSet):
     queryset = List.objects.all()
@@ -446,6 +561,68 @@ class CardViewSet(viewsets.ModelViewSet):
             meta={"to_list": target_list.id, "position": card.position}
         )
         return Response(CardSerializer(card).data, status=200)
+
+    @action(detail=True, methods=['post'], url_path='assignees')
+    def manage_assignees(self, request, pk=None):
+        """
+        POST {action: 'add'|'remove', user_ids: [ids]}
+        """
+        card = self.get_object()
+        if request.user != card.list.board.owner:
+            return Response({"detail": "Solo el catedrático del curso puede modificar asignados."}, status=403)
+        action_type = request.data.get('action', 'add')
+        user_ids = request.data.get('user_ids', [])
+        if not isinstance(user_ids, list):
+            return Response({"detail": "user_ids inválido"}, status=400)
+        users = list(User.objects.filter(id__in=user_ids))
+        if action_type == 'remove':
+            card.assignees.remove(*users)
+        else:
+            card.assignees.add(*users)
+        return Response({"assignees": list(card.assignees.values_list('id', flat=True))})
+
+    @action(detail=True, methods=['post'], url_path='labels')
+    def manage_labels(self, request, pk=None):
+        """
+        POST {action: 'add'|'remove', label_ids: [ids]}
+        """
+        card = self.get_object()
+        if request.user != card.list.board.owner:
+            return Response({"detail": "Solo el catedrático del curso puede modificar etiquetas."}, status=403)
+        action_type = request.data.get('action', 'add')
+        label_ids = request.data.get('label_ids', [])
+        if not isinstance(label_ids, list):
+            return Response({"detail": "label_ids inválido"}, status=400)
+        labels = list(Label.objects.filter(id__in=label_ids, board=card.list.board))
+        if action_type == 'remove':
+            card.labels.remove(*labels)
+        else:
+            card.labels.add(*labels)
+        return Response({"labels": list(card.labels.values_list('id', flat=True))})
+
+    @action(detail=False, methods=['get'], url_path='search')
+    def search(self, request):
+        """
+        /api/cards/search/?q=&label=&assignee=&due_before=&due_after=
+        """
+        queryset = self.get_queryset()
+        q = request.query_params.get('q')
+        if q:
+            queryset = queryset.filter(models.Q(title__icontains=q) | models.Q(description__icontains=q))
+        label = request.query_params.get('label')
+        if label:
+            queryset = queryset.filter(labels__id=label)
+        assignee = request.query_params.get('assignee')
+        if assignee:
+            queryset = queryset.filter(assignees__id=assignee)
+        due_before = request.query_params.get('due_before')
+        if due_before:
+            queryset = queryset.filter(due_date__lte=due_before)
+        due_after = request.query_params.get('due_after')
+        if due_after:
+            queryset = queryset.filter(due_date__gte=due_after)
+        ser = CardSerializer(queryset.order_by('position'), many=True)
+        return Response(ser.data, status=200)
 
 
 class CommentViewSet(viewsets.ModelViewSet):
