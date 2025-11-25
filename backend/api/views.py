@@ -586,7 +586,16 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        # Solo catedráticos (o admin único) pueden publicar
+        user = self.request.user
+        is_admin = (user.username == settings.ADMIN_USERNAME)
+        try:
+            is_teacher = (user.profile.role == 'teacher')  # type: ignore[attr-defined]
+        except Profile.DoesNotExist:
+            is_teacher = False
+        if not (is_admin or is_teacher):
+            raise serializers.ValidationError({"detail": "Solo catedráticos pueden publicar."})
+        serializer.save(created_by=user)
 
 
 class AdminUserViewSet(viewsets.ModelViewSet):

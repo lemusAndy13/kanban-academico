@@ -19,6 +19,8 @@ export default function BoardPage() {
   const [annForm, setAnnForm] = useState({ title:"", content:"" });
   const myId = Number(localStorage.getItem("user_id") || 0);
   const [isOwner, setIsOwner] = useState(false);
+  const role = localStorage.getItem("role");
+  const isAdmin = localStorage.getItem("is_admin") === "true";
 
   useEffect(() => {
     const load = async () => {
@@ -85,7 +87,11 @@ export default function BoardPage() {
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <strong>Publicaciones</strong>
-          {isOwner && <button className="btn btn-ghost" onClick={()=>{ setAnnForm({ title:"", content:"" }); setAnnOpen(true); }}>Nueva publicación</button>}
+          {(isOwner || role === "teacher" || isAdmin) && (
+            <button className="btn btn-ghost" onClick={()=>{ setAnnForm({ title:"", content:"" }); setAnnOpen(true); }}>
+              Nueva publicación
+            </button>
+          )}
         </div>
         {anns.length === 0 && <div className="empty">Aún no hay publicaciones.</div>}
         {anns.length > 0 && (
