@@ -10,6 +10,9 @@ class IsBoardMember(BasePermission):
             board = obj.board
         elif hasattr(obj, 'list') and hasattr(obj.list, 'board'):
             board = obj.list.board
+        elif hasattr(obj, 'card') and hasattr(obj.card, 'list') and hasattr(obj.card.list, 'board'):
+            # Soporte para modelos que cuelgan de Card (p. ej., Attachment)
+            board = obj.card.list.board
         elif isinstance(obj, Board):
             board = obj
         if not board:

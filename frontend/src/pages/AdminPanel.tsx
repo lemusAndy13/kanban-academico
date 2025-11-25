@@ -3,7 +3,7 @@ import api from "../services/axiosConfig";
 import Modal from "../components/Modal";
 
 type Role = "student" | "teacher";
-type AdminUser = { id:number; username:string; email:string; is_active:boolean; profile_role?: Role|null; name?: string };
+type AdminUser = { id:number; username:string; email:string; is_active:boolean; profile_role?: Role|null; name?: string; institution_id?: string };
 type Board = { id:number; code?:string; name:string; color:string; owner?: {id:number; username:string}; members?: Array<{id:number; username:string}> };
 
 export default function AdminPanel() {
@@ -40,6 +40,9 @@ function CoursesAdmin() {
   const [teacherId, setTeacherId] = useState<number|"">("");
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [replaceStudents, setReplaceStudents] = useState(false);
+  const [teacherCode, setTeacherCode] = useState("");
+  const [studentsCodes, setStudentsCodes] = useState("");
+  const [resolveMsg, setResolveMsg] = useState("");
 
   useEffect(()=>{ loadBoards(); loadUsers(); }, []);
 
@@ -208,9 +211,24 @@ function CoursesAdmin() {
           <select className="input" value={teacherId} onChange={(e)=>setTeacherId(e.target.value ? Number(e.target.value) : "")}>
             <option value="">— Seleccionar —</option>
             {teacherOptions.map(t=>(
-              <option key={t.id} value={t.id}>{t.username}</option>
+              <option key={t.id} value={t.id}>{t.name || t.username} {t.institution_id ? `(${t.institution_id})` : ""}</option>
             ))}
           </select>
+          <div className="row" style={{ marginTop:8, gap:8 }}>
+            <input className="input" placeholder="ID institucional (DOC-000001)" value={teacherCode} onChange={(e)=>setTeacherCode(e.target.value)} />
+            <button className="btn btn-ghost" onClick={async ()=>{
+              setResolveMsg("");
+              if (!teacherCode.trim()) return;
+              try {
+                const { data } = await api.get(`/admin/users/by-institution-id/`, { params: { id: teacherCode.trim() } });
+                setTeacherId(data?.id || "");
+                setResolveMsg(data ? `Catedrático: ${data.name || data.username} <${data.email}>` : "No encontrado");
+              } catch {
+                setResolveMsg("No encontrado");
+              }
+            }}>Buscar por ID</button>
+          </div>
+          {resolveMsg && <div className="muted" style={{ marginTop:6 }}>{resolveMsg}</div>}
         </div>
         <div className="form-group">
           <label className="form-label">Estudiantes (selección múltiple)</label>
@@ -225,9 +243,31 @@ function CoursesAdmin() {
             style={{ minHeight: 160 }}
           >
             {studentOptions.map(s=>(
-              <option key={s.id} value={s.id}>{s.username}</option>
+              <option key={s.id} value={s.id}>{s.name || s.username} {s.institution_id ? `(${s.institution_id})` : ""}</option>
             ))}
           </select>
+          <div className="row" style={{ marginTop:8, gap:8 }}>
+            <input className="input" placeholder="IDs (ALU-000001, ALU-000002)" value={studentsCodes} onChange={(e)=>setStudentsCodes(e.target.value)} />
+            <button className="btn btn-ghost" onClick={async ()=>{
+              setResolveMsg("");
+              const ids = studentsCodes.split(",").map(s=>s.trim()).filter(Boolean);
+              if (ids.length === 0) return;
+              const results:number[] = [];
+              for (const code of ids) {
+                try {
+                  const { data } = await api.get(`/admin/users/by-institution-id/`, { params: { id: code } });
+                  if (data?.id) results.push(Number(data.id));
+                } catch {}
+              }
+              if (results.length > 0) {
+                setSelectedStudentIds(prev => Array.from(new Set([...prev, ...results])));
+                setResolveMsg(`Resueltos ${results.length} ID(s).`);
+              } else {
+                setResolveMsg("No se resolvieron IDs.");
+              }
+            }}>Agregar por IDs</button>
+          </div>
+          {resolveMsg && <div className="muted" style={{ marginTop:6 }}>{resolveMsg}</div>}
           <label className="checkbox" style={{ marginTop: 8, display:"inline-flex", alignItems:"center", gap:8 }}>
             <input type="checkbox" checked={replaceStudents} onChange={(e)=>setReplaceStudents(e.target.checked)} />
             <span>Reemplazar estudiantes actuales</span>
@@ -295,6 +335,7 @@ function UsersAdmin() {
                 <div className="pill">{u.profile_role || "-"}</div>
               </div>
               <div className="muted">{u.email || "-"}</div>
+              {u.institution_id && <div className="muted">ID: {u.institution_id}</div>}
               <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:10 }}>
                 <button className="btn btn-ghost" onClick={()=>toggleActive(u)}>{u.is_active ? "Desactivar" : "Activar"}</button>
                 <button className="btn btn-ghost" onClick={()=>{ setPassOpen(u); setNewPass(""); }}>Contraseña</button>

@@ -31,9 +31,11 @@ class ListSerializer(serializers.ModelSerializer):
 class CardSerializer(serializers.ModelSerializer):
     labels = serializers.PrimaryKeyRelatedField(queryset=Label.objects.all(), many=True, required=False)
     board = serializers.SerializerMethodField(read_only=True)
+    created_by = UserSerializer(read_only=True)
     class Meta:
         model = Card
         fields = ['id','list','board','title','description','due_date','priority','max_points','position','created_by','assignees','labels']
+        read_only_fields = ['created_by','position']
 
     def get_board(self, obj):
         try:
@@ -93,11 +95,12 @@ class AdminUserSerializer(serializers.ModelSerializer):
     profile_role = serializers.SerializerMethodField(read_only=True)
     full_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     name = serializers.SerializerMethodField(read_only=True)
+    institution_id = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'is_active', 'password', 'role', 'profile_role', 'full_name', 'name']
-        read_only_fields = ['id', 'profile_role', 'name']
+        fields = ['id', 'username', 'email', 'is_active', 'password', 'role', 'profile_role', 'full_name', 'name', 'institution_id']
+        read_only_fields = ['id', 'profile_role', 'name', 'institution_id']
 
     def get_profile_role(self, obj):
         try:
@@ -144,6 +147,12 @@ class AdminUserSerializer(serializers.ModelSerializer):
 
     def get_name(self, obj):
         return obj.first_name or obj.username
+    
+    def get_institution_id(self, obj):
+        try:
+            return obj.profile.institution_id
+        except Profile.DoesNotExist:
+            return None
 
     def validate(self, attrs):
         email = attrs.get('email')

@@ -17,6 +17,7 @@ from django.db import models
 from .permissions import IsBoardMember, CanDeleteBoard, IsCourseOwner, IsSingleAdmin
 from rest_framework.permissions import IsAdminUser
 from django.conf import settings
+from django.utils import timezone
 from .serializers import AdminUserSerializer
  
 
@@ -307,12 +308,32 @@ class CardViewSet(viewsets.ModelViewSet):
         """
         Solo el catedrático asignado (owner) del curso puede crear tareas.
         """
-        serializer = self.get_serializer(data=request.data)
+        data = request.data.copy()
+        # Si no llega lista, permitir que llegue board y usar/crear la primera lista
+        if not data.get("list"):
+            board_id = data.get("board")
+            if not board_id:
+                return Response({"detail": "list o board requerido."}, status=400)
+            try:
+                board = Board.objects.get(id=board_id)
+            except Board.DoesNotExist:
+                return Response({"detail": "board no existe."}, status=404)
+            # Validar owner
+            if request.user != board.owner:
+                return Response({"detail": "Solo el catedrático del curso puede crear tareas."}, status=403)
+            first_list = board.lists.order_by("position").first()
+            if not first_list:
+                # crear lista por defecto
+                first_list = List.objects.create(board=board, title="Pendientes", position=0)
+            data["list"] = first_list.id
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         list_obj = serializer.validated_data.get("list")
         if not list_obj or request.user != list_obj.board.owner:
             return Response({"detail": "Solo el catedrático del curso puede crear tareas."}, status=403)
-        return super().create(request, *args, **kwargs)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         card = serializer.save(created_by=self.request.user)
@@ -500,7 +521,18 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         """
         attachment = self.get_object()
         board = attachment.card.list.board
-        if request.user != board.owner:
+        # Permitir calificar a catedráticos del curso (owner o miembro) y al admin único
+        is_member = board.members.filter(id=request.user.id).exists()
+        is_admin = (request.user.username == settings.ADMIN_USERNAME)
+        try:
+            is_teacher = (request.user.profile.role == 'teacher')  # type: ignore[attr-defined]
+        except Profile.DoesNotExist:
+            is_teacher = False
+        # Si es owner pero no figura como miembro, agregarlo
+        if request.user == board.owner and not is_member:
+            board.members.add(request.user)
+            is_member = True
+        if not (is_admin or (is_teacher and (is_member or request.user == board.owner))):
             return Response({"detail": "Solo el catedrático del curso puede calificar."}, status=403)
         score = request.data.get('score')
         feedback = request.data.get('feedback', '')
@@ -561,6 +593,18 @@ class AdminUserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('username')
     serializer_class = AdminUserSerializer
     permission_classes = [IsSingleAdmin]
+
+    @action(detail=False, methods=['get'], url_path='by-institution-id')
+    def by_institution_id(self, request):
+        code = request.query_params.get('id')
+        if not code:
+            return Response({"detail": "id requerido"}, status=400)
+        try:
+            profile = Profile.objects.get(institution_id__iexact=code.strip())
+            user = profile.user
+        except Profile.DoesNotExist:
+            return Response({"detail": "No encontrado"}, status=404)
+        return Response(AdminUserSerializer(user).data, status=200)
 
     @action(detail=True, methods=['post'])
     def set_password(self, request, pk=None):

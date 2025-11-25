@@ -32,6 +32,9 @@ export default function AdminLogin() {
       if (typeof res.data.full_name !== "undefined") {
         localStorage.setItem("full_name", String(res.data.full_name || ""));
       }
+      if (typeof res.data.institution_id !== "undefined") {
+        localStorage.setItem("institution_id", String(res.data.institution_id || ""));
+      }
       navigate("/admin");
     } catch (err) {
       setError(err?.response?.data?.detail || "Error al iniciar sesión");

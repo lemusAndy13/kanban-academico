@@ -29,6 +29,9 @@ export default function Tasks() {
   const [viewCard, setViewCard] = useState(null);
   const [attachments, setAttachments] = useState([]);
   const [grades, setGrades] = useState({});
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [myScores, setMyScores] = useState({}); // cardId -> { score, max }
+  const [statusMap, setStatusMap] = useState({}); // cardId -> status string (solo estudiante)
 
   // Create Task Modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -66,6 +69,43 @@ export default function Tasks() {
       if (params.length) qs += `?${params.join("&")}`;
       const { data } = await api.get(qs);
       setTasks(data);
+      // Cargar “mi nota” y estado por tarjeta si soy estudiante
+      if (role === "student" && Array.isArray(data)) {
+        const entries = await Promise.all(
+          data.map(async (t) => {
+            try {
+              const res = await api.get(`/attachments/?card=${t.id}`);
+              const list = res.data || [];
+              const mineAll = list.filter((a)=> a?.uploader?.id === myId);
+              const gradedOne = mineAll.find((a)=> typeof a?.score === "number");
+              const scoreEntry = gradedOne ? { score: gradedOne.score, max: t.max_points || 100 } : null;
+              const hasSubmission = mineAll.length > 0;
+              const graded = Boolean(gradedOne);
+              return [t.id, { scoreEntry, hasSubmission, graded, due: t.due_date }];
+            } catch { return [t.id, { scoreEntry:null, hasSubmission:false, graded:false, due: t.due_date }]; }
+          })
+        );
+        const scoreMap = {};
+        const status = {};
+        const nowMs = Date.now();
+        for (const [idStr, info] of entries) {
+          const id = Number(idStr);
+          if (info.scoreEntry) scoreMap[id] = info.scoreEntry;
+          const dueMs = info.due ? Date.parse(info.due) : NaN;
+          const past = Number.isFinite(dueMs) && nowMs >= dueMs;
+          if (past) {
+            if (info.hasSubmission && !info.graded) status[id] = "Entregado (pendiente de calificación)";
+            else if (!info.hasSubmission) status[id] = "No entregada";
+          } else if (info.hasSubmission) {
+            status[id] = info.graded ? "Calificado" : "Entregado";
+          }
+        }
+        setMyScores(scoreMap);
+        setStatusMap(status);
+      } else {
+        setMyScores({});
+        setStatusMap({});
+      }
     } catch (error) {
       setError("No se pudieron cargar las tareas");
     }
@@ -144,8 +184,28 @@ export default function Tasks() {
 
   const saveCreate = async () => {
     try {
-      if (!form.title || !form.list) return;
-      const payload = { ...form };
+      if (!form.title) return;
+      let listId = form.list;
+      // Si no hay lista (oculta en UI), tomar la primera del curso o crear "Pendientes"
+      if (!listId) {
+        // intentar con las cargadas en estado
+        const localFirst = (lists || []).find((l) => l.board === selectedBoard);
+        if (localFirst) {
+          listId = localFirst.id;
+        } else {
+          // cargar desde API y crear si no existe
+          const r = await api.get("/lists/");
+          const fromApi = (r.data || []).filter((l) => l.board === selectedBoard);
+          if (fromApi.length > 0) {
+            listId = fromApi[0].id;
+          } else if (selectedBoard) {
+            const created = await api.post("/lists/", { board: selectedBoard, title: "Pendientes", position: 0 });
+            listId = created.data?.id;
+          }
+        }
+      }
+      if (!listId) throw new Error("No hay listas en el curso seleccionado.");
+      const payload = { ...form, list: listId, board: selectedBoard };
       // Vacíos a null
       if (!payload.description) delete payload.description;
       if (!payload.due_date) delete payload.due_date;
@@ -155,7 +215,15 @@ export default function Tasks() {
       setCreateOpen(false);
       setForm({ list: "", title: "", description: "", due_date: "", priority: "low", max_points: 100 });
     } catch (e) {
-      setError(e?.response?.data?.detail || "No se pudo crear la tarea");
+      const resp = e?.response?.data;
+      let msg = resp?.detail;
+      if (!msg && resp && typeof resp === "object") {
+        const firstKey = Object.keys(resp)[0];
+        const firstVal = firstKey ? resp[firstKey] : null;
+        if (Array.isArray(firstVal)) msg = firstVal[0];
+        else if (typeof firstVal === "string") msg = firstVal;
+      }
+      setError(msg || "No se pudo crear la tarea");
     }
   };
 
@@ -198,12 +266,28 @@ export default function Tasks() {
                 <h3>{t.title}</h3>
                 <p className="muted">{t.description || "Sin descripción"}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                  {t.due_date && <span className="pill">Vence: {new Date(t.due_date).toLocaleDateString()}</span>}
+                  {t.due_date && <span className="pill">Vence: {new Date(t.due_date).toLocaleString()}</span>}
                   <span className="pill">Prioridad: {t.priority}</span>
+                {role === "student" && myScores[t.id] && (
+                  <span className="pill" style={{ background:"#e8f5e9", borderColor:"#c8e6c9" }}>
+                    Mi nota: {myScores[t.id].score}/{myScores[t.id].max}
+                  </span>
+                )}
+                {role === "student" && statusMap[t.id] && (
+                  <span className="pill" style={{ background:"#fff8e1", borderColor:"#ffe0b2" }}>
+                    {statusMap[t.id]}
+                  </span>
+                )}
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
                   {role === "teacher" && <button className="btn btn-ghost" onClick={() => openAssign(t)}>Asignar</button>}
-                  <button className="btn btn-ghost" onClick={() => { setAttachCard(t); setAttachUrl(""); setAttachFile(null); setAttachOpen(true); }}>
+                  <button
+                    className="btn btn-ghost"
+                    disabled={role === "student" && t.due_date && Date.now() >= Date.parse(t.due_date)}
+                    onClick={() => {
+                      if (role === "student" && t.due_date && Date.now() >= Date.parse(t.due_date)) return;
+                      setAttachCard(t); setAttachUrl(""); setAttachFile(null); setAttachOpen(true);
+                    }}>
                     Adjuntar
                   </button>
                   <button className="btn btn-ghost" onClick={async ()=>{
@@ -272,8 +356,18 @@ export default function Tasks() {
               <div key={a.id} className="item" style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:8 }}>
                 <div>
                   <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-                    {a.file_url && <a className="link" href={a.file_url} target="_blank" rel="noreferrer">Archivo</a>}
-                    {a.url && <a className="link" href={a.url} target="_blank" rel="noreferrer">Enlace</a>}
+                    {a.file_url && (
+                      <>
+                        <button className="btn btn-ghost" onClick={()=>setPreviewUrl(a.file_url)}>Ver</button>
+                        <a className="link" href={a.file_url} target="_blank" rel="noreferrer">Abrir</a>
+                      </>
+                    )}
+                    {a.url && (
+                      <>
+                        <button className="btn btn-ghost" onClick={()=>setPreviewUrl(a.url)}>Ver</button>
+                        <a className="link" href={a.url} target="_blank" rel="noreferrer">Abrir</a>
+                      </>
+                    )}
                     <span className="pill">{a.uploader?.username || "—"}</span>
                     {a.is_submission && <span className="pill" style={{ background:"#e8f5e9", borderColor:"#c8e6c9" }}>Entrega</span>}
                   </div>
@@ -314,7 +408,17 @@ export default function Tasks() {
                             const { data } = await api.get(`/attachments/?card=${viewCard.id}`);
                             setAttachments(data || []);
                             setGrades({});
-                          } catch { setError("No se pudo calificar"); }
+                          } catch (e) {
+                            const resp = e?.response?.data;
+                            let msg = resp?.detail;
+                            if (!msg && resp && typeof resp === "object") {
+                              const firstKey = Object.keys(resp)[0];
+                              const firstVal = firstKey ? resp[firstKey] : null;
+                              if (Array.isArray(firstVal)) msg = firstVal[0];
+                              else if (typeof firstVal === "string") msg = firstVal;
+                            }
+                            setError(msg || "No se pudo calificar");
+                          }
                         }}
                       >
                         Guardar
@@ -324,6 +428,33 @@ export default function Tasks() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+        {previewUrl && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <strong>Vista previa</strong>
+              <button className="btn btn-ghost" onClick={()=>setPreviewUrl("")}>Cerrar vista</button>
+            </div>
+            <div style={{ marginTop: 8, border:"1px solid var(--border)", borderRadius:8, overflow:"hidden" }}>
+              {/* Renderización simple según extensión */}
+              {(() => {
+                const lower = String(previewUrl).toLowerCase();
+                const isImg = [".png",".jpg",".jpeg",".gif",".webp"].some(ext => lower.endsWith(ext));
+                const isPdf = lower.endsWith(".pdf");
+                const isVideo = [".mp4",".webm",".ogg"].some(ext => lower.endsWith(ext));
+                if (isImg) {
+                  return <img src={previewUrl} alt="preview" style={{ maxWidth:"100%", display:"block" }} />;
+                }
+                if (isVideo) {
+                  return <video src={previewUrl} style={{ width:"100%" }} controls />;
+                }
+                if (isPdf) {
+                  return <iframe title="pdf" src={previewUrl} style={{ width:"100%", height:480 }} />;
+                }
+                return <iframe title="preview" src={previewUrl} style={{ width:"100%", height:480 }} />;
+              })()}
+            </div>
           </div>
         )}
       </Modal>
@@ -403,18 +534,6 @@ export default function Tasks() {
             {boards.length === 0 && <option value="">— No tienes cursos como catedrático —</option>}
             {boards.map((b)=>(
               <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Lista</label>
-          <select
-            className="input"
-            value={form.list}
-            onChange={(e) => setForm((f) => ({ ...f, list: Number(e.target.value) }))}
-          >
-            {lists.map((l) => (
-              <option key={l.id} value={l.id}>{l.title}</option>
             ))}
           </select>
         </div>
