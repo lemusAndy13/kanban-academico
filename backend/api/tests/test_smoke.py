@@ -12,3 +12,8 @@ class SmokeApiTests(APITestCase):
         self.assertIn(resp.status_code, (200, 301, 302))
 
 
+
+
+
+
+
